@@ -21,7 +21,7 @@ export default function AdminListingsPage() {
                 // To get all jobs globally, the API might not support an explicit "get all" route directly without contractor_id
                 // But for Admin, we use the fallback of /jobs assuming an admin override or mock query.
                 // Assuming /jobs works for admin or we fetch nearby with huge radius
-                const { data } = await JobsAPI.getNearbyJobs({ lat: 37.7749, lon: -122.4194, radius: 10000 });
+                const { data } = await JobsAPI.getNearbyJobs({ latitude: 37.7749, longitude: -122.4194, radiusKm: 10000 });
                 setJobs(Array.isArray(data) ? data : []);
             } catch (err: any) {
                 console.error("Failed to load listings:", err);

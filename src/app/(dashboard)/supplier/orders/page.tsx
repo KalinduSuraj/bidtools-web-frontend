@@ -45,7 +45,7 @@ export default function SupplierOrdersPage() {
             o.job_id?.toLowerCase().includes(searchQuery.toLowerCase())
         );
 
-    const totalRevenue = orders.filter(o => o.status === 'completed').reduce((acc, o) => acc + (Number(o.total_cost) || 0), 0);
+    const totalRevenue = orders.filter(o => o.status === 'completed').reduce((acc, o) => acc + (Number(o.total_amount) || 0), 0);
 
     if (isLoading) return <LoadingWindow fullScreen message="Loading orders..." />;
 
@@ -145,7 +145,7 @@ export default function SupplierOrdersPage() {
                                             </span>
                                             <span className="flex items-center gap-1">
                                                 <DollarSign className="w-3.5 h-3.5" />
-                                                <span className="font-bold text-main">${Number(order.total_cost).toFixed(2)}</span>
+                                                <span className="font-bold text-main">${Number(order.total_amount).toFixed(2)}</span>
                                             </span>
                                         </div>
                                     </div>

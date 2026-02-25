@@ -5,6 +5,7 @@ export const apiClient = axios.create({
   baseURL: API_URL,
   headers: {
     'Content-Type': 'application/json',
+    'x-tenant-id': 'bidtools-tenant-1',
   },
 });
 

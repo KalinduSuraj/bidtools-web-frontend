@@ -17,11 +17,11 @@ export default function NewInventoryPage() {
 
     const [formData, setFormData] = useState({
         name: '',
-        category: 'earthmoving',
         description: '',
-        daily_rate: '',
-        condition: 'good',
-        serial_number: ''
+        price_per_day: '',
+        price_per_hour: '',
+        latitude: '',
+        longitude: ''
     });
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -45,12 +45,12 @@ export default function NewInventoryPage() {
 
         try {
             const payload = {
-                supplier_id: user.user_id,
                 name: formData.name,
-                category: formData.category,
                 description: formData.description,
-                daily_rate: Number(formData.daily_rate),
-                availability_status: 'available' as const
+                price_per_day: Number(formData.price_per_day),
+                price_per_hour: Number(formData.price_per_hour),
+                latitude: Number(formData.latitude),
+                longitude: Number(formData.longitude),
             };
 
             await ItemsAPI.createItem(payload);
@@ -121,29 +121,20 @@ export default function NewInventoryPage() {
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                             <div className="space-y-2">
-                                <label className="text-sm tracking-tight font-semibold text-muted">Category</label>
-                                <select
-                                    name="category" required value={formData.category} onChange={handleChange}
-                                    className="w-full bg-base border border-subtle text-main rounded-xl py-3 px-4 focus:ring-2 focus:ring-primary transition-all appearance-none"
-                                >
-                                    <option value="earthmoving">Earthmoving</option>
-                                    <option value="aerial">Aerial Lifts</option>
-                                    <option value="material">Material Handling</option>
-                                    <option value="power">Power Generation</option>
-                                    <option value="other">Other / Attachments</option>
-                                </select>
+                                <label className="text-sm tracking-tight font-semibold text-muted">Latitude</label>
+                                <input
+                                    type="number" name="latitude" required step="any" value={formData.latitude} onChange={handleChange}
+                                    placeholder="e.g. 6.9271"
+                                    className="w-full bg-base border border-subtle text-main rounded-xl py-3 px-4 focus:ring-2 focus:ring-primary transition-all"
+                                />
                             </div>
                             <div className="space-y-2">
-                                <label className="text-sm tracking-tight font-semibold text-muted">Condition State</label>
-                                <select
-                                    name="condition" required value={formData.condition} onChange={handleChange}
-                                    className="w-full bg-base border border-subtle text-main rounded-xl py-3 px-4 focus:ring-2 focus:ring-primary transition-all appearance-none"
-                                >
-                                    <option value="new">Brand New (0-1 yr)</option>
-                                    <option value="excellent">Excellent</option>
-                                    <option value="good">Good / Standard</option>
-                                    <option value="fair">Fair / Heavy Wear</option>
-                                </select>
+                                <label className="text-sm tracking-tight font-semibold text-muted">Longitude</label>
+                                <input
+                                    type="number" name="longitude" required step="any" value={formData.longitude} onChange={handleChange}
+                                    placeholder="e.g. 79.8612"
+                                    className="w-full bg-base border border-subtle text-main rounded-xl py-3 px-4 focus:ring-2 focus:ring-primary transition-all"
+                                />
                             </div>
                         </div>
                     </div>
@@ -156,19 +147,28 @@ export default function NewInventoryPage() {
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 border-b border-subtle pb-4">
                             <div className="space-y-2">
-                                <label className="text-sm tracking-tight font-semibold text-muted">Standard Daily Rate (USD)</label>
+                                <label className="text-sm tracking-tight font-semibold text-muted">Price Per Day (USD)</label>
                                 <div className="relative">
                                     <DollarSign className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted pointer-events-none" />
                                     <input
-                                        type="number" name="daily_rate" required min="0" step="0.01" value={formData.daily_rate} onChange={handleChange}
+                                        type="number" name="price_per_day" required min="0" step="0.01" value={formData.price_per_day} onChange={handleChange}
                                         placeholder="0.00"
                                         className="w-full bg-base border border-subtle text-main rounded-xl py-3 pl-10 pr-4 focus:ring-2 focus:ring-primary transition-all text-xl font-bold font-mono"
                                     />
                                     <div className="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-muted">/ day</div>
                                 </div>
                             </div>
-                            <div className="bg-surface-hover/50 rounded-xl p-4 border border-subtle text-sm text-muted flex items-center">
-                                <p>Standard rate acts as your anchor price during live bidding. You can always bid lower or higher based on job specifics.</p>
+                            <div className="space-y-2">
+                                <label className="text-sm tracking-tight font-semibold text-muted">Price Per Hour (USD)</label>
+                                <div className="relative">
+                                    <DollarSign className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted pointer-events-none" />
+                                    <input
+                                        type="number" name="price_per_hour" required min="0" step="0.01" value={formData.price_per_hour} onChange={handleChange}
+                                        placeholder="0.00"
+                                        className="w-full bg-base border border-subtle text-main rounded-xl py-3 pl-10 pr-4 focus:ring-2 focus:ring-primary transition-all text-xl font-bold font-mono"
+                                    />
+                                    <div className="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-muted">/ hr</div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -182,18 +182,6 @@ export default function NewInventoryPage() {
                                 placeholder="Highlight key specs, hours, or recent maintenance..."
                                 className="w-full bg-base border border-subtle text-main rounded-xl py-3 px-4 focus:ring-2 focus:ring-primary transition-all resize-none"
                             />
-                        </div>
-
-                        <div className="space-y-2">
-                            <label className="text-sm tracking-tight font-semibold text-muted">Serial Number / VIN (Optional)</label>
-                            <div className="relative">
-                                <Anchor className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted pointer-events-none" />
-                                <input
-                                    type="text" name="serial_number" value={formData.serial_number} onChange={handleChange}
-                                    placeholder="For internal fleet tracking"
-                                    className="w-full bg-base border border-subtle text-main rounded-xl py-3 pl-10 pr-4 focus:ring-2 focus:ring-primary transition-all font-mono text-sm uppercase"
-                                />
-                            </div>
                         </div>
                     </div>
 

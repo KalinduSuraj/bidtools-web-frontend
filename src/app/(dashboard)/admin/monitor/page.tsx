@@ -17,7 +17,7 @@ export default function AdminBiddingMonitor() {
     useEffect(() => {
         const fetchAuctions = async () => {
             try {
-                const { data } = await JobsAPI.getNearbyJobs({ lat: 0, lon: 0, radius: 999999 });
+                const { data } = await JobsAPI.getNearbyJobs({ latitude: 0, longitude: 0, radiusKm: 999999 });
                 setAuctions(Array.isArray(data) ? data.filter((j: any) => j.status === 'open') : []);
             } catch (error) {
                 console.error('Failed to fetch global auctions:', error);

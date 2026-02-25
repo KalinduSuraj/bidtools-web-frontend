@@ -1,19 +1,26 @@
 import { apiClient } from './client';
-import type { Job } from '@/types/job.types';
+import type { Job, CreateJobDto } from '@/types/job.types';
 
 export const JobsAPI = {
-    getNearbyJobs: async (params: { lat: number, lon: number, radius?: number }) =>
-        apiClient.get<Job[]>('/jobs/nearby', { params }),
+    /** GET /jobs/nearby?latitude=&longitude=&radiusKm= - Get nearby jobs */
+    getNearbyJobs: async (params: { latitude: string | number, longitude: string | number, radiusKm?: string | number }) =>
+        apiClient.get<Job[]>('/jobs/nearby', {
+            params: {
+                latitude: String(params.latitude),
+                longitude: String(params.longitude),
+                radiusKm: params.radiusKm ? String(params.radiusKm) : undefined,
+            }
+        }),
 
-    getContractorJobs: async (contractorId: string) =>
-        apiClient.get<Job[]>('/jobs/contractor', { params: { contractor_id: contractorId } }),
+    /** GET /jobs/contractor - Get jobs for current contractor (uses JWT) */
+    getContractorJobs: async () =>
+        apiClient.get<Job[]>('/jobs/contractor'),
 
+    /** GET /jobs/:jobId - Get job by ID */
     getJobById: async (jobId: string) =>
         apiClient.get<Job>(`/jobs/${jobId}`),
 
-    createJob: async (data: Partial<Job>) =>
+    /** POST /jobs - Create a new job (uses JWT for contractor_id) */
+    createJob: async (data: CreateJobDto) =>
         apiClient.post<Job>('/jobs', data),
-
-    updateJobStatus: async (jobId: string, status: string) =>
-        apiClient.patch<Job>(`/jobs/${jobId}/status`, { status })
 };

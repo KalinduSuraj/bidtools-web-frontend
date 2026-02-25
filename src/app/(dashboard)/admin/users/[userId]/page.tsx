@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, use } from 'react';
 import { ArrowLeft, User, Mail, Shield, Calendar, Activity, Loader2, AlertTriangle, CheckCircle2, XCircle, Clock } from 'lucide-react';
 import Link from 'next/link';
 import { UsersAPI } from '@/lib/api/users.api';
@@ -8,7 +8,8 @@ import { ProfilesAPI } from '@/lib/api/profiles.api';
 import { LoadingWindow } from '@/components/ui/LoadingWindow';
 import { ErrorWindow } from '@/components/ui/ErrorWindow';
 
-export default function AdminUserDetailPage({ params }: { params: { userId: string } }) {
+export default function AdminUserDetailPage({ params }: { params: Promise<{ userId: string }> }) {
+    const { userId } = use(params);
     const [user, setUser] = useState<any>(null);
     const [profile, setProfile] = useState<any>(null);
     const [isLoading, setIsLoading] = useState(true);
@@ -19,12 +20,13 @@ export default function AdminUserDetailPage({ params }: { params: { userId: stri
         const fetchUser = async () => {
             setIsLoading(true);
             try {
-                const { data: userData } = await UsersAPI.getUserById(params.userId);
+                const { data: userData } = await UsersAPI.getUserById(userId);
                 setUser(userData);
 
                 try {
-                    const { data: profileData } = await ProfilesAPI.getProfileByUserId(params.userId);
-                    setProfile(profileData);
+                    const { data: profileData } = await ProfilesAPI.getProfileByUserId(userId);
+                    const p = Array.isArray(profileData) ? profileData[0] : profileData;
+                    setProfile(p || null);
                 } catch {
                     // Profile may not exist yet
                 }
@@ -36,13 +38,13 @@ export default function AdminUserDetailPage({ params }: { params: { userId: stri
             }
         };
         fetchUser();
-    }, [params.userId]);
+    }, [userId]);
 
     const handleStatusChange = async (newStatus: string) => {
         if (!confirm(`Are you sure you want to change this user's status to "${newStatus}"?`)) return;
         setIsUpdating(true);
         try {
-            const { data } = await UsersAPI.updateUserStatus(params.userId, newStatus);
+            const { data } = await UsersAPI.updateUser(userId, { status: newStatus });
             setUser(data);
         } catch (err: any) {
             console.error('Failed to update status:', err);
@@ -69,7 +71,8 @@ export default function AdminUserDetailPage({ params }: { params: { userId: stri
         pending_verification: { color: 'bg-orange-500/10 text-orange-500 border-orange-500/20', icon: <AlertTriangle className="w-4 h-4" /> },
     };
 
-    const current = statusConfig[user?.status] || statusConfig.inactive;
+    const userStatus = typeof user?.status === 'object' ? user?.status?.name : user?.status;
+    const current = statusConfig[userStatus] || statusConfig.inactive;
 
     return (
         <div className="max-w-4xl mx-auto py-8 animate-in fade-in duration-500">
@@ -92,7 +95,7 @@ export default function AdminUserDetailPage({ params }: { params: { userId: stri
                         </div>
                     </div>
                     <span className={`text-xs font-bold px-3 py-1.5 rounded-lg border flex items-center gap-1.5 ${current.color}`}>
-                        {current.icon} {user?.status?.replace('_', ' ')}
+                        {current.icon} {userStatus?.replace('_', ' ')}
                     </span>
                 </div>
             </div>
@@ -167,7 +170,7 @@ export default function AdminUserDetailPage({ params }: { params: { userId: stri
                 </h3>
 
                 <div className="flex flex-wrap gap-3">
-                    {user?.status !== 'active' && (
+                    {userStatus !== 'active' && (
                         <button
                             onClick={() => handleStatusChange('active')}
                             disabled={isUpdating}
@@ -176,7 +179,7 @@ export default function AdminUserDetailPage({ params }: { params: { userId: stri
                             {isUpdating ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />} Activate
                         </button>
                     )}
-                    {user?.status !== 'suspended' && (
+                    {userStatus !== 'suspended' && (
                         <button
                             onClick={() => handleStatusChange('suspended')}
                             disabled={isUpdating}

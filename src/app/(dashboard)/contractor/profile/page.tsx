@@ -18,7 +18,8 @@ export default function ContractorProfilePage() {
             if (!user?.user_id) return;
             try {
                 const { data } = await ProfilesAPI.getProfileByUserId(user.user_id);
-                setProfile(data);
+                const profileData = Array.isArray(data) ? data[0] : data;
+                setProfile(profileData || null);
             } catch (err) {
                 console.log('No profile found yet');
             } finally {
@@ -131,7 +132,7 @@ export default function ContractorProfilePage() {
                 </div>
                 <div className="flex justify-between py-2 border-b border-subtle/50">
                     <span className="text-sm text-muted">Role</span>
-                    <span className="text-sm font-bold text-primary capitalize">{user?.role?.name}</span>
+                    <span className="text-sm font-bold text-primary capitalize">{typeof user?.role === 'object' ? user?.role?.name : user?.role}</span>
                 </div>
                 <div className="flex justify-between py-2">
                     <span className="text-sm text-muted">Member Since</span>

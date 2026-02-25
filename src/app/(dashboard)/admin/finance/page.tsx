@@ -35,8 +35,8 @@ export default function AdminFinancePage() {
     }, []);
 
     const filteredPayments = payments.filter(p =>
-        p.payment_id?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.rental_id?.toLowerCase().includes(searchQuery.toLowerCase())
+        String(p.payment_id || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        String(p.rental_id || '').toLowerCase().includes(searchQuery.toLowerCase())
     );
 
     const totalVolume = payments.reduce((acc, p) => acc + (Number(p.amount) || 0), 0);

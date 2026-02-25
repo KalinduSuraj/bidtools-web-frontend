@@ -2,22 +2,25 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bell, CheckCheck, Check, Clock, Trash2, Loader2 } from 'lucide-react';
+import { Bell, Check, Clock } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
 import { NotificationsAPI } from '@/lib/api/notifications.api';
 import { LoadingWindow } from '@/components/ui/LoadingWindow';
 import { ErrorWindow } from '@/components/ui/ErrorWindow';
 import { EmptyState } from '@/components/ui/EmptyState';
 
 export default function ContractorNotificationsPage() {
+    const { user } = useAuth();
     const [notifications, setNotifications] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
     const fetchNotifications = async () => {
+        if (!user?.user_id) return;
         setIsLoading(true);
         setError(null);
         try {
-            const { data } = await NotificationsAPI.getNotifications();
+            const { data } = await NotificationsAPI.getNotifications(user.user_id);
             const sorted = (Array.isArray(data) ? data : []).sort((a: any, b: any) =>
                 new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
             );
@@ -32,27 +35,19 @@ export default function ContractorNotificationsPage() {
 
     useEffect(() => {
         fetchNotifications();
-    }, []);
+    }, [user?.user_id]);
 
-    const handleMarkAsRead = async (id: string) => {
+    const handleMarkAsRead = async (notification: any) => {
+        if (!user?.user_id) return;
         try {
-            await NotificationsAPI.markAsRead(id);
-            setNotifications(prev => prev.map(n => n.notification_id === id ? { ...n, read: true } : n));
+            await NotificationsAPI.markAsRead(user.user_id, notification.SK);
+            setNotifications(prev => prev.map(n => n.SK === notification.SK ? { ...n, is_read: true } : n));
         } catch (err) {
             console.error('Failed to mark as read:', err);
         }
     };
 
-    const handleMarkAllRead = async () => {
-        try {
-            await NotificationsAPI.markAllAsRead();
-            setNotifications(prev => prev.map(n => ({ ...n, read: true })));
-        } catch (err) {
-            console.error('Failed to mark all as read:', err);
-        }
-    };
-
-    const unreadCount = notifications.filter(n => !n.read).length;
+    const unreadCount = notifications.filter(n => !n.is_read).length;
 
     if (isLoading) return <LoadingWindow fullScreen message="Loading notifications..." />;
 
@@ -68,14 +63,6 @@ export default function ContractorNotificationsPage() {
                         {unreadCount > 0 && <span className="ml-2 text-primary font-bold">({unreadCount} unread)</span>}
                     </p>
                 </div>
-                {unreadCount > 0 && (
-                    <button
-                        onClick={handleMarkAllRead}
-                        className="px-4 py-2 bg-surface hover:bg-surface-hover text-main rounded-xl text-sm font-medium border border-subtle flex items-center gap-2 transition-colors shadow-theme-sm"
-                    >
-                        <CheckCheck className="w-4 h-4" /> Mark all as read
-                    </button>
-                )}
             </div>
 
             {error && <ErrorWindow message={error} />}
@@ -91,28 +78,28 @@ export default function ContractorNotificationsPage() {
                     <AnimatePresence>
                         {notifications.map((n) => (
                             <motion.div
-                                key={n.notification_id}
+                                key={n.SK || n.PK}
                                 initial={{ opacity: 0, y: 10 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 exit={{ opacity: 0, x: -100 }}
-                                className={`p-4 rounded-2xl border transition-colors ${n.read
+                                className={`p-4 rounded-2xl border transition-colors ${n.is_read
                                     ? 'bg-surface border-subtle'
                                     : 'bg-primary/5 border-primary/20'
                                     }`}
                             >
                                 <div className="flex items-start justify-between gap-4">
                                     <div className="flex items-start gap-3 flex-1">
-                                        <div className={`mt-1 w-2 h-2 rounded-full flex-shrink-0 ${n.read ? 'bg-transparent' : 'bg-primary'}`} />
+                                        <div className={`mt-1 w-2 h-2 rounded-full flex-shrink-0 ${n.is_read ? 'bg-transparent' : 'bg-primary'}`} />
                                         <div className="flex-1">
-                                            <p className={`text-sm ${n.read ? 'text-muted' : 'text-main font-medium'}`}>{n.message}</p>
+                                            <p className={`text-sm ${n.is_read ? 'text-muted' : 'text-main font-medium'}`}>{n.message}</p>
                                             <p className="text-xs text-muted mt-1 flex items-center gap-1">
                                                 <Clock className="w-3 h-3" /> {new Date(n.created_at).toLocaleString()}
                                             </p>
                                         </div>
                                     </div>
-                                    {!n.read && (
+                                    {!n.is_read && (
                                         <button
-                                            onClick={() => handleMarkAsRead(n.notification_id)}
+                                            onClick={() => handleMarkAsRead(n)}
                                             className="text-xs text-primary hover:underline font-bold flex items-center gap-1 flex-shrink-0"
                                         >
                                             <Check className="w-3.5 h-3.5" /> Read

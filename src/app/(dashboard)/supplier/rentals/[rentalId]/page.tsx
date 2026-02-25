@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, use } from 'react';
 import { ArrowLeft, Calendar, DollarSign, MapPin, Package, Clock, CheckCircle2, XCircle } from 'lucide-react';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
@@ -10,7 +10,8 @@ import { ItemsAPI } from '@/lib/api/items.api';
 import { LoadingWindow } from '@/components/ui/LoadingWindow';
 import { ErrorWindow } from '@/components/ui/ErrorWindow';
 
-export default function SupplierRentalDetailPage({ params }: { params: { rentalId: string } }) {
+export default function SupplierRentalDetailPage({ params }: { params: Promise<{ rentalId: string }> }) {
+    const { rentalId } = use(params);
     const { user } = useAuth();
     const [rental, setRental] = useState<any>(null);
     const [job, setJob] = useState<any>(null);
@@ -22,7 +23,7 @@ export default function SupplierRentalDetailPage({ params }: { params: { rentalI
         const fetchDetails = async () => {
             setIsLoading(true);
             try {
-                const { data: rentalData } = await RentalsAPI.getRentalById(params.rentalId);
+                const { data: rentalData } = await RentalsAPI.getRentalById(rentalId);
                 setRental(rentalData);
 
                 const [jobRes, itemRes] = await Promise.allSettled([
@@ -40,7 +41,7 @@ export default function SupplierRentalDetailPage({ params }: { params: { rentalI
             }
         };
         fetchDetails();
-    }, [params.rentalId]);
+    }, [rentalId]);
 
     if (isLoading) return <LoadingWindow fullScreen message="Loading rental agreement..." />;
 
@@ -99,8 +100,8 @@ export default function SupplierRentalDetailPage({ params }: { params: { rentalI
                         <div className="flex items-start gap-3">
                             <DollarSign className="w-4 h-4 text-accent-success mt-1 flex-shrink-0" />
                             <div>
-                                <p className="text-xs text-muted">Total Cost</p>
-                                <p className="text-xl font-black text-main">${Number(rental?.total_cost || 0).toFixed(2)}</p>
+                                <p className="text-xs text-muted">Total Amount</p>
+                                <p className="text-xl font-black text-main">${Number(rental?.total_amount || 0).toFixed(2)}</p>
                             </div>
                         </div>
 
@@ -122,20 +123,20 @@ export default function SupplierRentalDetailPage({ params }: { params: { rentalI
                                 <Package className="w-5 h-5 text-muted" /> Your Equipment
                             </h3>
                             <div className="flex justify-between py-2 border-b border-subtle/50">
-                                <span className="text-sm text-muted">Category</span>
-                                <span className="text-sm font-semibold text-main capitalize">{item.category}</span>
+                                <span className="text-sm text-muted">Name</span>
+                                <span className="text-sm font-semibold text-main">{item.name}</span>
                             </div>
                             <div className="flex justify-between py-2 border-b border-subtle/50">
-                                <span className="text-sm text-muted">Brand / Model</span>
-                                <span className="text-sm text-main">{item.brand} {item.model}</span>
+                                <span className="text-sm text-muted">Description</span>
+                                <span className="text-sm text-main">{item.description || '—'}</span>
                             </div>
                             <div className="flex justify-between py-2 border-b border-subtle/50">
-                                <span className="text-sm text-muted">Condition</span>
-                                <span className="text-sm text-main capitalize">{item.condition}</span>
+                                <span className="text-sm text-muted">Price Per Day</span>
+                                <span className="text-sm font-bold text-primary">${item.price_per_day}/day</span>
                             </div>
                             <div className="flex justify-between py-2">
-                                <span className="text-sm text-muted">Daily Rate</span>
-                                <span className="text-sm font-bold text-primary">${item.daily_rate}/day</span>
+                                <span className="text-sm text-muted">Price Per Hour</span>
+                                <span className="text-sm text-main">${item.price_per_hour}/hr</span>
                             </div>
                         </div>
                     )}
@@ -143,7 +144,7 @@ export default function SupplierRentalDetailPage({ params }: { params: { rentalI
                     {job && (
                         <div className="bg-surface border border-subtle rounded-2xl p-6 shadow-theme-sm space-y-3">
                             <h3 className="font-bold text-lg border-b border-subtle pb-3">Job Request</h3>
-                            <p className="text-sm text-main">{job.description || job.job_description}</p>
+                            <p className="text-sm text-main">{job.job_description}</p>
                             {(job.latitude && job.longitude) && (
                                 <p className="text-xs text-muted flex items-center gap-1">
                                     <MapPin className="w-3.5 h-3.5" /> {job.latitude}, {job.longitude}

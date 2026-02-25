@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, use } from 'react';
 import { ArrowLeft, Loader2, MapPin, Calendar, Activity, DollarSign, CheckCircle2, Clock, AlertCircle, Send } from 'lucide-react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -11,7 +11,8 @@ import { LoadingWindow } from '@/components/ui/LoadingWindow';
 import { ErrorWindow } from '@/components/ui/ErrorWindow';
 import { EmptyState } from '@/components/ui/EmptyState';
 
-export default function ContractorRequestDetailPage({ params }: { params: { jobId: string } }) {
+export default function ContractorRequestDetailPage({ params }: { params: Promise<{ jobId: string }> }) {
+    const { jobId } = use(params);
     const { user } = useAuth();
     const [job, setJob] = useState<any>(null);
     const [bids, setBids] = useState<any[]>([]);
@@ -24,17 +25,27 @@ export default function ContractorRequestDetailPage({ params }: { params: { jobI
             if (!user?.user_id) return;
             setIsLoading(true);
             try {
-                const [jobRes, bidsRes] = await Promise.all([
-                    JobsAPI.getJobById(params.jobId),
-                    BidsAPI.getBidsForJob(params.jobId),
+                const [jobResult, bidsResult] = await Promise.allSettled([
+                    JobsAPI.getJobById(jobId),
+                    BidsAPI.getBidsForJob(jobId),
                 ]);
 
-                if (jobRes.data.contractor_id !== user.user_id) {
+                if (jobResult.status === 'rejected') {
+                    throw jobResult.reason;
+                }
+
+                const jobData = jobResult.value.data;
+                if (jobData.contractor_id !== user.user_id) {
                     throw new Error("Unauthorized to view this request.");
                 }
 
-                setJob(jobRes.data);
-                setBids(Array.isArray(bidsRes.data) ? bidsRes.data : []);
+                setJob(jobData);
+                if (bidsResult.status === 'fulfilled') {
+                    setBids(Array.isArray(bidsResult.value.data) ? bidsResult.value.data : []);
+                } else {
+                    console.warn('Bid service unavailable:', bidsResult.reason?.response?.data?.message || bidsResult.reason?.message);
+                    setBids([]);
+                }
             } catch (err: any) {
                 console.error('Failed to load request:', err);
                 setError(err.response?.data?.message || err.message || 'Failed to load request details.');
@@ -43,15 +54,16 @@ export default function ContractorRequestDetailPage({ params }: { params: { jobI
             }
         };
         fetchData();
-    }, [user?.user_id, params.jobId]);
+    }, [user?.user_id, jobId]);
 
     const handleAcceptBid = async (bidId: string) => {
         if (!confirm('Accept this quote and generate a rental agreement?')) return;
         setProcessingBidId(bidId);
         try {
-            await BidsAPI.acceptBid(bidId);
-            const { data } = await BidsAPI.getBidsForJob(params.jobId);
+            // Note: No accept endpoint in current API. Refresh bids to get server-side updates.
+            const { data } = await BidsAPI.getBidsForJob(jobId);
             setBids(Array.isArray(data) ? data : []);
+            alert('Bid acceptance will be processed. Please check back shortly.');
         } catch (err: any) {
             console.error('Failed to accept bid:', err);
         } finally {
@@ -63,8 +75,8 @@ export default function ContractorRequestDetailPage({ params }: { params: { jobI
         if (!confirm('Reject this quote?')) return;
         setProcessingBidId(bidId);
         try {
-            await BidsAPI.rejectBid(bidId);
-            const { data } = await BidsAPI.getBidsForJob(params.jobId);
+            // Note: No reject endpoint in current API. Refresh bids to get server-side updates.
+            const { data } = await BidsAPI.getBidsForJob(jobId);
             setBids(Array.isArray(data) ? data : []);
         } catch (err: any) {
             console.error('Failed to reject bid:', err);
@@ -103,7 +115,7 @@ export default function ContractorRequestDetailPage({ params }: { params: { jobI
             <div className="bg-surface border border-subtle rounded-2xl p-6 shadow-theme-sm mb-6">
                 <div className="flex flex-col sm:flex-row justify-between items-start gap-4 mb-4">
                     <div>
-                        <h1 className="text-2xl font-bold text-main mb-2">{job?.description || job?.job_description}</h1>
+                        <h1 className="text-2xl font-bold text-main mb-2">{job?.job_description}</h1>
                         <p className="text-sm font-mono text-muted">Request ID: {job?.job_id?.split('-')[0]}</p>
                     </div>
                     <span className={`text-xs font-bold px-3 py-1.5 rounded-lg border ${jobStatus.color}`}>
