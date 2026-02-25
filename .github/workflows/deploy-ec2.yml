@@ -21,11 +21,13 @@ jobs:
 
       - name: Build Docker image
         run: |
-          docker build -t ${{ secrets.DOCKER_USERNAME }}/bidtools-backend:latest .
+          docker build \
+            --build-arg NPM_TOKEN=${{ secrets.NPM_TOKEN }} \
+            -t ${{ secrets.DOCKER_USERNAME }}/bidtools-web-frontend:latest .
 
       - name: Push Docker image
         run: |
-          docker push ${{ secrets.DOCKER_USERNAME }}/bidtools-backend:latest
+          docker push ${{ secrets.DOCKER_USERNAME }}/bidtools-web-frontend:latest
 
       - name: Deploy on EC2 via SSH
         uses: appleboy/ssh-action@v1.0.3
@@ -34,10 +36,10 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            docker pull ${{ secrets.DOCKER_USERNAME }}/bidtools-backend:latest
-            docker stop bidtools-backend || true
-            docker rm bidtools-backend || true
-            docker run -d --name bidtools-backend \
+            docker pull ${{ secrets.DOCKER_USERNAME }}/bidtools-web-frontend:latest
+            docker stop bidtools-web-frontend || true
+            docker rm bidtools-web-frontend || true
+            docker run -d --name bidtools-web-frontend \
               -e NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }} \
               -e NEXT_PUBLIC_APP_NAME=${{ secrets.NEXT_PUBLIC_APP_NAME }} \
               -e NEXT_PUBLIC_MAPBOX_TOKEN=${{ secrets.NEXT_PUBLIC_MAPBOX_TOKEN }} \
