@@ -30,6 +30,9 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
+# Ensure pnpm is available in this stage via Corepack
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
 # Reuse installed node_modules to speed up the build
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
