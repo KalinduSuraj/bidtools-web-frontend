@@ -16,8 +16,14 @@ RUN corepack enable && corepack prepare pnpm@latest --activate
 
 # Cache deps by copying package manifests first
 COPY package.json pnpm-lock.yaml ./
-# If you require private registries, COPY .npmrc here (handle secrets carefully)
-RUN pnpm install --frozen-lockfile
+# Allow passing an NPM token for private registries (example: @jsr scope)
+ARG NPM_TOKEN=""
+# Create .npmrc only if NPM_TOKEN is provided, install deps and remove .npmrc in the same layer
+RUN if [ -n "$NPM_TOKEN" ]; then \
+			printf "//npm.jsr.io/:_authToken=${NPM_TOKEN}\\n@jsr:registry=https://npm.jsr.io/\\n" > .npmrc; \
+		fi && \
+		pnpm install --frozen-lockfile && \
+		rm -f .npmrc || true
 
 FROM node:18-alpine AS builder
 WORKDIR /app
