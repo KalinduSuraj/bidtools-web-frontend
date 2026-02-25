@@ -10,7 +10,6 @@ RUN corepack enable && corepack prepare pnpm@latest --activate
 
 # Copy package manifests first to leverage Docker layer caching
 COPY package.json pnpm-lock.yaml ./
-COPY .npmrc ./
 
 # Install dependencies
 RUN pnpm install --frozen-lockfile
