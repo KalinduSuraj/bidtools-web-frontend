@@ -23,7 +23,7 @@ export default function SupplierDashboard() {
 
             try {
                 // Fetch nearby jobs (using dummy coords for broad search if no location granted)
-                const { data: jobs } = await JobsAPI.getNearbyJobs({ lat: 37.7749, lon: -122.4194, radius: 50 });
+                const { data: jobs } = await JobsAPI.getNearbyJobs({ latitude: 37.7749, longitude: -122.4194, radiusKm: 50 });
 
                 // Fetch inventory for count
                 const { data: items } = await ItemsAPI.getSupplierItems(user.user_id);

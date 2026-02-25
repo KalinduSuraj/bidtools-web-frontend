@@ -1,11 +1,45 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { CreditCard, ArrowLeft, Download, RefreshCw, FileText } from 'lucide-react';
+import { CreditCard, Download, RefreshCw, FileText, DollarSign, CheckCircle2, Clock, AlertCircle, Loader2 } from 'lucide-react';
 import Link from 'next/link';
+import { PaymentsAPI } from '@/lib/api/payments.api';
+import { LoadingWindow } from '@/components/ui/LoadingWindow';
+import { ErrorWindow } from '@/components/ui/ErrorWindow';
 import { EmptyState } from '@/components/ui/EmptyState';
 
 export default function ContractorPaymentsPage() {
+    const [payments, setPayments] = useState<any[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    const fetchPayments = async () => {
+        setIsLoading(true);
+        setError(null);
+        try {
+            const { data } = await PaymentsAPI.getPayments();
+            const sorted = (Array.isArray(data) ? data : []).sort((a: any, b: any) =>
+                new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+            );
+            setPayments(sorted);
+        } catch (err: any) {
+            console.error('Failed to load payments:', err);
+            setError(err.response?.data?.message || 'Failed to load payment history.');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchPayments();
+    }, []);
+
+    const totalPaid = payments.filter(p => p.status === 'completed').reduce((acc, p) => acc + (Number(p.amount) || 0), 0);
+    const pendingAmount = payments.filter(p => p.status === 'pending').reduce((acc, p) => acc + (Number(p.amount) || 0), 0);
+
+    if (isLoading) return <LoadingWindow fullScreen message="Loading payments..." />;
+
     return (
         <div className="max-w-6xl mx-auto py-8 animate-in fade-in duration-500">
             {/* Header */}
@@ -14,86 +48,94 @@ export default function ContractorPaymentsPage() {
                     <h1 className="text-3xl font-bold tracking-tight mb-2 flex items-center gap-3">
                         <CreditCard className="w-8 h-8 text-primary" /> Billing & Payments
                     </h1>
-                    <p className="text-muted">Manage your payment methods, view invoices, and track escrow disbursements.</p>
+                    <p className="text-muted">View invoices and track payment history.</p>
                 </div>
+                <button onClick={fetchPayments} className="px-4 py-2 bg-surface hover:bg-surface-hover text-main rounded-xl text-sm font-medium border border-subtle flex items-center gap-2 transition-colors shadow-theme-sm">
+                    <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} /> Refresh
+                </button>
+            </div>
 
-                <div className="flex gap-3">
-                    <button className="px-4 py-2 bg-surface hover:bg-surface-hover text-main rounded-xl text-sm font-medium border border-subtle flex items-center gap-2 transition-colors shadow-theme-sm disabled:opacity-50">
-                        <Download className="w-4 h-4" /> Export Statements
-                    </button>
-                    <button className="px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-xl text-sm font-bold shadow-theme-sm flex items-center gap-2 transition-colors">
-                        Add Payment Method
-                    </button>
+            {/* KPI Row */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+                <div className="bg-surface border border-subtle rounded-2xl p-5 shadow-theme-sm">
+                    <p className="text-sm font-bold text-muted uppercase tracking-wider">Total Paid</p>
+                    <p className="text-3xl font-black text-accent-success mt-2">${totalPaid.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                </div>
+                <div className="bg-surface border border-subtle rounded-2xl p-5 shadow-theme-sm">
+                    <p className="text-sm font-bold text-muted uppercase tracking-wider">Pending</p>
+                    <p className="text-3xl font-black text-orange-500 mt-2">${pendingAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                </div>
+                <div className="bg-surface border border-subtle rounded-2xl p-5 shadow-theme-sm">
+                    <p className="text-sm font-bold text-muted uppercase tracking-wider">Transactions</p>
+                    <p className="text-3xl font-black text-main mt-2">{payments.length}</p>
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                {/* Payment Methods & Summary */}
-                <div className="lg:col-span-1 space-y-6">
-                    <div className="bg-surface border border-subtle rounded-2xl p-6 shadow-theme-sm relative overflow-hidden">
-                        <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full blur-3xl" />
+            {error && <ErrorWindow message={error} />}
 
-                        <h3 className="font-bold text-lg mb-6 flex items-center gap-2">
-                            <CreditCard className="w-5 h-5 text-muted" /> Active Cards
-                        </h3>
-
-                        <div className="space-y-4">
-                            <div className="p-4 rounded-xl bg-base border-2 border-primary/30 flex items-center justify-between group">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-6 bg-gradient-to-r from-blue-600 to-blue-800 rounded flex items-center justify-center text-[8px] text-white font-bold italic tracking-wider">VISA</div>
-                                    <div>
-                                        <p className="font-bold text-main text-sm">•••• •••• •••• 4242</p>
-                                        <p className="text-xs text-muted">Expires 12/26</p>
-                                    </div>
-                                </div>
-                                <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-primary/10 text-primary">Default</span>
-                            </div>
-
-                            <button className="w-full py-3 border-2 border-dashed border-subtle hover:border-primary/50 hover:bg-surface-hover rounded-xl text-sm font-bold text-muted hover:text-primary transition-all flex items-center justify-center gap-2">
-                                + Add New Card
-                            </button>
-                        </div>
-                    </div>
-
-                    <div className="bg-surface border border-subtle rounded-2xl p-6 shadow-theme-sm">
-                        <h3 className="font-bold text-lg mb-4">Escrow Summary</h3>
-                        <div className="space-y-3">
-                            <div className="flex justify-between items-center text-sm">
-                                <span className="text-muted">Funds in Escrow</span>
-                                <span className="font-bold text-orange-500">$0.00</span>
-                            </div>
-                            <div className="flex justify-between items-center text-sm">
-                                <span className="text-muted">Cleared & Paid (YTD)</span>
-                                <span className="font-bold text-main">$0.00</span>
-                            </div>
-                            <div className="flex justify-between items-center text-sm">
-                                <span className="text-muted">Pending Refunds</span>
-                                <span className="font-bold text-main">$0.00</span>
-                            </div>
-                        </div>
-                    </div>
+            {/* Payment History */}
+            <div className="bg-surface border border-subtle rounded-2xl overflow-hidden shadow-theme-sm">
+                <div className="p-4 border-b border-subtle bg-surface-hover/30 flex items-center gap-2">
+                    <FileText className="w-5 h-5 text-muted" />
+                    <h3 className="font-bold text-lg">Payment History</h3>
                 </div>
 
-                {/* Invoices */}
-                <div className="lg:col-span-2">
-                    <div className="bg-surface border border-subtle rounded-2xl overflow-hidden shadow-theme-sm h-full flex flex-col">
-                        <div className="p-4 border-b border-subtle bg-surface-hover/30 flex items-center gap-2">
-                            <FileText className="w-5 h-5 text-muted" />
-                            <h3 className="font-bold text-lg">Recent Invoices</h3>
-                        </div>
-
-                        <div className="flex-1 p-8 flex flex-col items-center justify-center text-center">
-                            <EmptyState
-                                title="No Payment History"
-                                message="You haven't made any payments yet. When you accept a quote and lock in a rental, the deposit and payment milestones will appear here."
-                                icon={<CreditCard className="w-12 h-12 text-primary opacity-30" />}
-                            />
-                            <Link href="/contractor/requests/new" className="mt-6 inline-block px-6 py-2.5 bg-primary/10 text-primary hover:bg-primary font-bold hover:text-white rounded-xl transition-colors">
-                                Find Equipment First
-                            </Link>
-                        </div>
+                {payments.length === 0 ? (
+                    <div className="p-8">
+                        <EmptyState
+                            title="No Payment History"
+                            message="You haven't made any payments yet. Payments will appear here once rental agreements are created."
+                            icon={<CreditCard className="w-12 h-12 text-primary opacity-30" />}
+                        />
                     </div>
-                </div>
+                ) : (
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse min-w-[700px]">
+                            <thead>
+                                <tr className="border-b border-subtle text-xs uppercase tracking-wider text-muted bg-surface-hover/50">
+                                    <th className="px-6 py-4 font-medium">Payment</th>
+                                    <th className="px-6 py-4 font-medium">Amount</th>
+                                    <th className="px-6 py-4 font-medium">Method</th>
+                                    <th className="px-6 py-4 font-medium">Status</th>
+                                    <th className="px-6 py-4 font-medium">Date</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-subtle">
+                                {payments.map((payment, i) => (
+                                    <motion.tr
+                                        key={payment.payment_id}
+                                        initial={{ opacity: 0, y: 10 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        transition={{ delay: i * 0.03 }}
+                                        className="hover:bg-surface-hover/30 transition-colors"
+                                    >
+                                        <td className="px-6 py-4">
+                                            <p className="font-bold text-main text-sm">Rental #{String(payment.rental_id)}</p>
+                                            <p className="text-xs text-muted font-mono">ID: {String(payment.payment_id).split('-')[0]}</p>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <p className="font-black text-main">${Number(payment.amount).toFixed(2)}</p>
+                                            <p className="text-[10px] uppercase text-muted">{payment.currency || 'USD'}</p>
+                                        </td>
+                                        <td className="px-6 py-4 text-sm text-muted capitalize">{payment.payment_method?.replace('_', ' ') || 'N/A'}</td>
+                                        <td className="px-6 py-4">
+                                            <span className={`text-xs font-bold px-2.5 py-1 rounded inline-flex items-center gap-1.5 border ${
+                                                payment.status === 'completed' ? 'bg-accent-success/10 border-accent-success/20 text-accent-success' :
+                                                payment.status === 'pending' ? 'bg-orange-500/10 border-orange-500/20 text-orange-500' :
+                                                'bg-accent-danger/10 border-accent-danger/20 text-accent-danger'
+                                            }`}>
+                                                {payment.status === 'completed' && <CheckCircle2 className="w-3.5 h-3.5" />}
+                                                {payment.status === 'pending' && <Clock className="w-3.5 h-3.5" />}
+                                                {payment.status}
+                                            </span>
+                                        </td>
+                                        <td className="px-6 py-4 text-sm text-muted">{new Date(payment.created_at).toLocaleDateString()}</td>
+                                    </motion.tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
             </div>
         </div>
     );

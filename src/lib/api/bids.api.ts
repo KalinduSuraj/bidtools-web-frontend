@@ -1,19 +1,24 @@
 import { apiClient } from './client';
-import type { Bid } from '@/types/bid.types';
+import type { Bid, PlaceBidDto, CreateBidDto, CreateAuctionDto } from '@/types/bid.types';
 
 export const BidsAPI = {
+    /** GET /bid/:jobId - Get all bids for a job */
     getBidsForJob: async (jobId: string) =>
-        apiClient.get<Bid[]>(`/jobs/${jobId}/bids`),
+        apiClient.get<Bid[]>(`/bid/${jobId}`),
 
-    getBidsBySupplier: async (supplierId: string) =>
-        apiClient.get<Bid[]>(`/bids/supplier/${supplierId}`),
+    /** GET /bid/:jobId/:bidId - Get a specific bid */
+    getBidDetails: async (jobId: string, bidId: string) =>
+        apiClient.get<Bid>(`/bid/${jobId}/${bidId}`),
 
-    placeBid: async (data: Partial<Bid>) =>
-        apiClient.post<Bid>('/bids', data),
+    /** POST /bid/place - Place a bid (new) */
+    placeBid: async (data: PlaceBidDto) =>
+        apiClient.post<Bid>('/bid/place', data),
 
-    acceptBid: async (bidId: string) =>
-        apiClient.patch<Bid>(`/bids/${bidId}/accept`),
+    /** POST /bid - Create a bid (legacy) */
+    createBid: async (data: CreateBidDto) =>
+        apiClient.post<Bid>('/bid', data),
 
-    rejectBid: async (bidId: string) =>
-        apiClient.patch<Bid>(`/bids/${bidId}/reject`)
+    /** POST /bid/auction - Create an auction */
+    createAuction: async (data: CreateAuctionDto) =>
+        apiClient.post('/bid/auction', data),
 };

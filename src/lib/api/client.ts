@@ -1,11 +1,11 @@
 import axios from 'axios';
-
-const NEXT_PUBLIC_API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+import { API_URL } from '@/lib/constants';
 
 export const apiClient = axios.create({
-  baseURL: NEXT_PUBLIC_API_URL,
+  baseURL: API_URL,
   headers: {
     'Content-Type': 'application/json',
+    'x-tenant-id': 'bidtools-tenant-1',
   },
 });
 
@@ -52,7 +52,7 @@ apiClient.interceptors.response.use(
         const refreshToken = localStorage.getItem('refresh_token');
         if (!refreshToken) throw new Error('No refresh token');
 
-        const { data } = await axios.post(`${NEXT_PUBLIC_API_URL}/auth/token/refresh`, {
+        const { data } = await axios.post(`${API_URL}/auth/token/refresh`, {
           refresh_token: refreshToken
         });
         

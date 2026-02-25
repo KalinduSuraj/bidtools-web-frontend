@@ -6,7 +6,7 @@ import { Zap, Moon, Sun, Search, MapPin, Filter, AlertCircle, ArrowRight, Loader
 import Link from 'next/link';
 import { useTheme } from 'next-themes';
 import { useRouter } from 'next/navigation';
-import { apiClient } from '@/lib/api/client';
+import { JobsAPI } from '@/lib/api/jobs.api';
 
 export default function ExplorePage() {
     const { theme, setTheme } = useTheme();
@@ -24,9 +24,7 @@ export default function ExplorePage() {
         const fetchPublicJobs = async () => {
             try {
                 // Fetch nearby jobs globally with a huge radius map to show all active public jobs
-                const { data } = await apiClient.get('/jobs/nearby', {
-                    params: { lat: 37.7749, lon: -122.4194, radius: 100000 }
-                });
+                const { data } = await JobsAPI.getNearbyJobs({ latitude: 37.7749, longitude: -122.4194, radiusKm: 100000 });
                 setJobs(Array.isArray(data) ? data : []);
                 setError(null);
             } catch (err: any) {

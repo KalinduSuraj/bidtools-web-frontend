@@ -33,7 +33,7 @@ export default function RequestFeedPage() {
                 const lat = coordinates?.lat || 37.7749;
                 const lon = coordinates?.lng || -122.4194;
 
-                const { data } = await JobsAPI.getNearbyJobs({ lat, lon, radius: debouncedRadius });
+                const { data } = await JobsAPI.getNearbyJobs({ latitude: lat, longitude: lon, radiusKm: debouncedRadius });
                 setJobs(Array.isArray(data) ? data : []);
             } catch (err: any) {
                 console.error('Failed to fetch nearby jobs:', err);
