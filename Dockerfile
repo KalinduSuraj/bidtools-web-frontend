@@ -1,53 +1,44 @@
-# Multi-stage Dockerfile for Next.js using pnpm (Corepack)
-# - deps: installs dependencies (cached by copying lockfiles)
-# - builder: builds the Next.js app
-# - runner: lightweight runtime image with only build outputs
+# Multi-stage Dockerfile for building and running the Next.js app (pnpm)
+# Builder stage: installs dependencies and builds the app
+FROM node:20-alpine AS builder
 
-FROM node:20-alpine AS deps
+# Set working directory
 WORKDIR /app
-ENV NODE_ENV=production
-ENV NEXT_TELEMETRY_DISABLED=1
 
-# Install build tools some native packages may need
-RUN apk add --no-cache python3 make g++ git
-
-# Use Corepack to provide pnpm in a reproducible way
+# Enable corepack and prepare pnpm
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
-# Cache deps by copying package manifests first
+# Copy package manifests first to leverage Docker layer caching
 COPY package.json pnpm-lock.yaml ./
-# Allow passing an NPM token for private registries (example: @jsr scope)
-ARG NPM_TOKEN=""
-# Create .npmrc only if NPM_TOKEN is provided, install deps and remove .npmrc in the same layer
-RUN if [ -n "$NPM_TOKEN" ]; then \
-			printf "//npm.jsr.io/:_authToken=${NPM_TOKEN}\\n@jsr:registry=https://npm.jsr.io/\\n" > .npmrc; \
-		fi && \
-		pnpm install --frozen-lockfile && \
-		rm -f .npmrc || true
+COPY .npmrc ./
 
-# Copy source and build in the same stage where pnpm is prepared so no additional
-# network fetch of pnpm is required in later stages. This avoids Corepack trying
-# to download pnpm inside a fresh stage where network or registry access may be
-# restricted.
+# Install dependencies
+RUN pnpm install --frozen-lockfile
+
+# Copy rest of the sources and build
 COPY . .
 RUN pnpm build
 
+# Production image: copy only what's needed to run
 FROM node:20-alpine AS runner
 WORKDIR /app
+
+# Enable corepack and pnpm in the runtime image
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
 ENV NODE_ENV=production
-ENV NEXT_TELEMETRY_DISABLED=1
 
-# tiny init to forward signals correctly
-RUN apk add --no-cache tini
-
-# Copy only runtime artifacts
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/package.json ./package.json
+# Copy package files (so `pnpm start` can see them) and production node_modules
+COPY package.json pnpm-lock.yaml ./
 COPY --from=builder /app/node_modules ./node_modules
 
-# Default port for Next.js
+# Copy built Next.js output and public assets
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/next.config.js ./next.config.js
+
+# Expose default Next.js port
 EXPOSE 3000
 
-ENTRYPOINT ["/sbin/tini", "--"]
+# Start the app
 CMD ["pnpm", "start"]
