@@ -15,7 +15,7 @@ interface RentalWithDetails {
     rental_id: string;
     start_date: string;
     end_date: string;
-    total_cost: number;
+    total_amount: number;
     status: string;
     job_id: string;
     item_id: string;
@@ -41,9 +41,10 @@ export default function ContractorRentalsPage() {
                 // Attempt to enrich with Job Descriptions for a better UX
                 const enriched = await Promise.all(
                     rawRentals.map(async (r: any) => {
+                        if (!r.job_id) return { ...r, job_description: 'Unknown Job' };
                         try {
                             const jobRes = await JobsAPI.getJobById(r.job_id);
-                            return { ...r, job_description: jobRes.data.job_description };
+                            return { ...r, job_description: jobRes.data?.job_description || 'Untitled Job' };
                         } catch {
                             return { ...r, job_description: 'Unknown Job' };
                         }
@@ -171,7 +172,7 @@ export default function ContractorRentalsPage() {
                             <div className="flex justify-between items-end mt-6">
                                 <div>
                                     <p className="text-[10px] uppercase font-bold tracking-wider text-muted mb-1">Total Cost</p>
-                                    <p className="text-2xl font-black text-main">${rental.total_cost || 0}</p>
+                                    <p className="text-2xl font-black text-main">${rental.total_amount || 0}</p>
                                 </div>
                                 <button className="px-5 py-2.5 bg-base border border-subtle hover:bg-surface-hover text-sm font-bold rounded-xl transition-colors">
                                     View Details

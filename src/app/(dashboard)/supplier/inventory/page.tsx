@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Plus, Search, Filter, MoreVertical, Settings2, Trash2, Edit } from 'lucide-react';
+import Link from 'next/link';
 import { ItemsAPI } from '@/lib/api/items.api';
 import { LoadingWindow } from '@/components/ui/LoadingWindow';
 import { ErrorWindow } from '@/components/ui/ErrorWindow';
@@ -41,7 +42,7 @@ export default function SupplierInventory() {
 
     const filteredInventory = inventory.filter(item =>
         item.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        item.category?.toLowerCase().includes(searchQuery.toLowerCase())
+        item.description?.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
     return (
@@ -53,10 +54,10 @@ export default function SupplierInventory() {
                     <p className="text-muted">Manage your equipment fleet, update status, and adjust daily rates.</p>
                 </div>
 
-                <button className="px-6 py-3 bg-primary hover:bg-primary-hover text-white rounded-xl font-medium shadow-theme-lg transition-all flex items-center gap-2 hover:-translate-y-0.5">
+                <Link href="/supplier/inventory/new" className="px-6 py-3 bg-primary hover:bg-primary-hover text-white rounded-xl font-medium shadow-theme-lg transition-all flex items-center gap-2 hover:-translate-y-0.5">
                     <Plus className="w-5 h-5" />
                     Add Equipment
-                </button>
+                </Link>
             </div>
 
             {/* Toolbar */}
@@ -98,7 +99,7 @@ export default function SupplierInventory() {
                         <thead>
                             <tr className="border-b border-subtle text-xs uppercase tracking-wider text-muted bg-surface-hover/50">
                                 <th className="p-4 font-medium pl-6">Equipment Details</th>
-                                <th className="p-4 font-medium">Category</th>
+                                <th className="p-4 font-medium">Description</th>
                                 <th className="p-4 font-medium">Daily Rate</th>
                                 <th className="p-4 font-medium">Status</th>
                                 <th className="p-4 font-medium text-right pr-6">Actions</th>
@@ -118,20 +119,20 @@ export default function SupplierInventory() {
                                             </div>
                                         </div>
                                     </td>
-                                    <td className="p-4 text-sm text-muted">{item.category}</td>
-                                    <td className="p-4 font-mono font-bold text-main">${item.daily_rate}<span className="text-xs text-muted font-normal">/day</span></td>
+                                    <td className="p-4 text-sm text-muted">{item.description || '—'}</td>
+                                    <td className="p-4 font-mono font-bold text-main">${item.price_per_day}<span className="text-xs text-muted font-normal">/day</span></td>
                                     <td className="p-4">
-                                        <span className={`text-xs font-bold px-3 py-1.5 rounded-full inline-flex items-center gap-1.5 border ${item.availability_status === 'available' ? 'bg-accent-success/10 text-accent-success border-accent-success/20' :
-                                            item.availability_status === 'rented' ? 'bg-primary/10 text-primary border-primary/20' :
-                                                item.availability_status === 'maintenance' ? 'bg-orange-500/10 text-orange-500 border-orange-500/20' :
+                                        <span className={`text-xs font-bold px-3 py-1.5 rounded-full inline-flex items-center gap-1.5 border ${item.status === 'available' ? 'bg-accent-success/10 text-accent-success border-accent-success/20' :
+                                            item.status === 'rented' ? 'bg-primary/10 text-primary border-primary/20' :
+                                                item.status === 'maintenance' ? 'bg-orange-500/10 text-orange-500 border-orange-500/20' :
                                                     'bg-surface-hover text-muted border-subtle'
                                             }`}>
-                                            <span className={`w-1.5 h-1.5 rounded-full ${item.availability_status === 'available' ? 'bg-accent-success' :
-                                                item.availability_status === 'rented' ? 'bg-primary' :
-                                                    item.availability_status === 'maintenance' ? 'bg-orange-500' :
+                                            <span className={`w-1.5 h-1.5 rounded-full ${item.status === 'available' ? 'bg-accent-success' :
+                                                item.status === 'rented' ? 'bg-primary' :
+                                                    item.status === 'maintenance' ? 'bg-orange-500' :
                                                         'bg-muted'
                                                 }`} />
-                                            {item.availability_status || 'Unknown'}
+                                            {item.status || 'Unknown'}
                                         </span>
                                     </td>
                                     <td className="p-4 text-right pr-6 relative">

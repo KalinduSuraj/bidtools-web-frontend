@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { DollarSign, Download, Search, AlertCircle, ArrowUpRight, ArrowDownRight, CreditCard, RefreshCw } from 'lucide-react';
+import { DollarSign, Download, Search, AlertCircle, ArrowUpRight, ArrowDownRight, CreditCard, RefreshCw, CheckCircle2, Loader2 } from 'lucide-react';
 import { PaymentsAPI } from '@/lib/api/payments.api';
 import { LoadingWindow } from '@/components/ui/LoadingWindow';
 import { ErrorWindow } from '@/components/ui/ErrorWindow';
@@ -35,8 +35,8 @@ export default function AdminFinancePage() {
     }, []);
 
     const filteredPayments = payments.filter(p =>
-        p.payment_id?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.rental_id?.toLowerCase().includes(searchQuery.toLowerCase())
+        String(p.payment_id || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        String(p.rental_id || '').toLowerCase().includes(searchQuery.toLowerCase())
     );
 
     const totalVolume = payments.reduce((acc, p) => acc + (Number(p.amount) || 0), 0);
@@ -154,8 +154,8 @@ export default function AdminFinancePage() {
                                     <tr key={payment.payment_id} className="hover:bg-surface-hover/30 transition-colors">
                                         <td className="px-6 py-4">
                                             <div>
-                                                <p className="font-bold text-main">Agreement #{payment.rental_id?.split('-')[0] || 'Unknown'}</p>
-                                                <p className="text-xs font-mono text-muted">Txn ID: {payment.payment_id.split('-')[0]}</p>
+                                                <p className="font-bold text-main">Agreement #{String(payment.rental_id || '').split('-')[0] || 'Unknown'}</p>
+                                                <p className="text-xs font-mono text-muted">Txn ID: {String(payment.payment_id || '').split('-')[0]}</p>
                                             </div>
                                         </td>
                                         <td className="px-6 py-4">

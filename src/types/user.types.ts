@@ -1,12 +1,28 @@
 export interface User {
     user_id: string;
+    cognito_username?: string;
     email: string;
     name: string;
     role: {
-        role_id: string;
-        name: string;
+        name: 'admin' | 'contractor' | 'supplier';
     };
-    status: 'active' | 'inactive' | 'suspended' | 'pending_verification';
+    status: {
+        name: string;
+    } | string;
     created_at: string;
     updated_at?: string;
+}
+
+export interface CreateUserDto {
+    email: string;
+    password: string;
+    name: string;
+    role: 'admin' | 'contractor' | 'supplier';
+}
+
+export interface UpdateUserDto {
+    email?: string;
+    name?: string;
+    role?: string;
+    status?: string;
 }

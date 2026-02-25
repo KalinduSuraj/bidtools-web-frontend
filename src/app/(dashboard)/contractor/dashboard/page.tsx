@@ -32,18 +32,20 @@ export default function ContractorDashboard() {
             if (!user?.user_id) return;
 
             try {
-                // Fetch user's jobs
-                const { data: contractorJobs } = await JobsAPI.getContractorJobs(user.user_id);
+                // Fetch jobs and rentals independently so one failure doesn't block the other
+                const [jobsResult, rentalsResult] = await Promise.allSettled([
+                    JobsAPI.getContractorJobs(),
+                    RentalsAPI.getContractorRentals(user.user_id),
+                ]);
 
-                // Fetch user's rentals
-                const { data: rentals } = await RentalsAPI.getContractorRentals(user.user_id);
-
-                const validJobs = Array.isArray(contractorJobs) ? contractorJobs : [];
-                const validRentals = Array.isArray(rentals) ? rentals : [];
+                const validJobs = jobsResult.status === 'fulfilled' && Array.isArray(jobsResult.value.data)
+                    ? jobsResult.value.data : [];
+                const validRentals = rentalsResult.status === 'fulfilled' && Array.isArray(rentalsResult.value.data)
+                    ? rentalsResult.value.data : [];
 
                 const activeRequests = validJobs.filter(j => j.status === 'open').length;
                 const awardedJobs = validRentals.length;
-                const totalSpent = validRentals.reduce((acc, r) => acc + (r.total_cost || 0), 0);
+                const totalSpent = validRentals.reduce((acc, r) => acc + (r.total_amount || 0), 0);
 
                 setJobs(validJobs);
                 setStats({ activeRequests, awardedJobs, totalSpent });

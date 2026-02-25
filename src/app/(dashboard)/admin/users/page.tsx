@@ -11,10 +11,14 @@ interface User {
     user_id: string;
     name: string;
     email: string;
-    role: { name: string };
-    status: 'active' | 'inactive' | 'suspended' | 'pending_verification';
+    role: { name: string } | string;
+    status: { name: string } | string;
     created_at: string;
 }
+
+// Helper to extract string from status/role which can be object or string
+const getStatusStr = (status: any): string => typeof status === 'object' ? status?.name : (status || 'inactive');
+const getRoleStr = (role: any): string => typeof role === 'object' ? role?.name : (role || 'unknown');
 
 export default function AdminUsersPage() {
     const [users, setUsers] = useState<User[]>([]);
@@ -58,7 +62,7 @@ export default function AdminUsersPage() {
 
     const handleUpdateStatus = async (userId: string, newStatus: string) => {
         try {
-            await UsersAPI.updateUserStatus(userId, newStatus as any);
+            await UsersAPI.updateUser(userId, { status: newStatus });
             setUsers(users.map(u => u.user_id === userId ? { ...u, status: newStatus as any } : u));
         } catch (err) {
             console.error('Failed to update user status:', err);
@@ -176,19 +180,21 @@ export default function AdminUsersPage() {
                                     </td>
                                     <td className="p-4">
                                         <span className="text-xs font-semibold px-2 py-1 rounded bg-surface-hover border border-subtle uppercase tracking-wider text-muted">
-                                            {user.role?.name || 'Unknown'}
+                                            {getRoleStr(user.role)}
                                         </span>
                                     </td>
                                     <td className="p-4">
-                                        <span className={`text-xs font-bold px-3 py-1.5 rounded-full inline-flex items-center gap-1.5 border ${user.status === 'active' ? 'bg-accent-success/10 text-accent-success border-accent-success/20' :
-                                            user.status === 'pending_verification' ? 'bg-blue-500/10 text-blue-500 border-blue-500/20' :
-                                                user.status === 'suspended' ? 'bg-accent-danger/10 text-accent-danger border-accent-danger/20' :
+                                        {(() => { const st = getStatusStr(user.status); return (
+                                        <span className={`text-xs font-bold px-3 py-1.5 rounded-full inline-flex items-center gap-1.5 border ${st === 'active' ? 'bg-accent-success/10 text-accent-success border-accent-success/20' :
+                                            st === 'pending_verification' ? 'bg-blue-500/10 text-blue-500 border-blue-500/20' :
+                                                st === 'suspended' ? 'bg-accent-danger/10 text-accent-danger border-accent-danger/20' :
                                                     'bg-surface-hover text-muted border-subtle'
                                             }`}>
-                                            {user.status === 'active' && <ShieldCheck className="w-3.5 h-3.5" />}
-                                            {user.status === 'suspended' && <AlertTriangle className="w-3.5 h-3.5" />}
-                                            {(user.status || 'inactive').replace('_', ' ')}
+                                            {st === 'active' && <ShieldCheck className="w-3.5 h-3.5" />}
+                                            {st === 'suspended' && <AlertTriangle className="w-3.5 h-3.5" />}
+                                            {st.replace('_', ' ')}
                                         </span>
+                                        ); })()}
                                     </td>
                                     <td className="p-4 text-sm text-muted">
                                         {new Date(user.created_at).toLocaleDateString()}
@@ -206,12 +212,12 @@ export default function AdminUsersPage() {
                                             <>
                                                 <div className="fixed inset-0 z-10" onClick={() => setActiveMenu(null)} />
                                                 <div className="absolute right-8 top-12 w-48 bg-surface border border-subtle rounded-xl shadow-theme-lg z-20 overflow-hidden text-left py-1 animate-in fade-in zoom-in-95 duration-100">
-                                                    {user.status !== 'active' && (
+                                                    {getStatusStr(user.status) !== 'active' && (
                                                         <button onClick={() => handleUpdateStatus(user.user_id, 'active')} className="w-full px-4 py-2 text-sm text-accent-success hover:bg-accent-success/10 flex items-center gap-2 transition-colors">
                                                             <ShieldCheck className="w-4 h-4" /> Activate User
                                                         </button>
                                                     )}
-                                                    {user.status !== 'suspended' && (
+                                                    {getStatusStr(user.status) !== 'suspended' && (
                                                         <button onClick={() => handleUpdateStatus(user.user_id, 'suspended')} className="w-full px-4 py-2 text-sm text-accent-danger hover:bg-accent-danger/10 flex items-center gap-2 transition-colors">
                                                             <StopCircle className="w-4 h-4" /> Suspend
                                                         </button>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, use } from 'react';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Loader2, DollarSign, Calculator, Send, AlertCircle, ShieldCheck, MapPin, Calendar, CheckSquare } from 'lucide-react';
 import { useRouter } from 'next/navigation';
@@ -12,7 +12,8 @@ import { BidsAPI } from '@/lib/api/bids.api';
 import { LoadingWindow } from '@/components/ui/LoadingWindow';
 import { ErrorWindow } from '@/components/ui/ErrorWindow';
 
-export default function SubmitBidPage({ params }: { params: { jobId: string } }) {
+export default function SubmitBidPage({ params }: { params: Promise<{ jobId: string }> }) {
+    const { jobId } = use(params);
     const router = useRouter();
     const { user } = useAuth();
 
@@ -34,12 +35,12 @@ export default function SubmitBidPage({ params }: { params: { jobId: string } })
             setIsLoading(true);
             try {
                 const [jobRes, invRes] = await Promise.all([
-                    JobsAPI.getJobById(params.jobId),
+                    JobsAPI.getJobById(jobId),
                     ItemsAPI.getSupplierItems(user.user_id)
                 ]);
                 setJob(jobRes.data);
                 // Only show available items for bidding
-                const availableItems = (Array.isArray(invRes.data) ? invRes.data : []).filter(item => item.availability_status === 'available');
+                const availableItems = (Array.isArray(invRes.data) ? invRes.data : []).filter(item => item.status === 'available');
                 setInventory(availableItems);
             } catch (err: any) {
                 console.error("Failed to load bid data:", err);
@@ -49,7 +50,7 @@ export default function SubmitBidPage({ params }: { params: { jobId: string } })
             }
         };
         fetchData();
-    }, [user?.user_id, params.jobId]);
+    }, [user?.user_id, jobId]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -60,10 +61,9 @@ export default function SubmitBidPage({ params }: { params: { jobId: string } })
 
         try {
             await BidsAPI.placeBid({
-                job_id: params.jobId,
-                supplier_id: user.user_id,
-                item_id: formData.item_id,
-                bid_amount: Number(formData.bid_amount),
+                jobId: jobId,
+                amount: Number(formData.bid_amount),
+                items: formData.item_id ? [{ itemId: formData.item_id, quantity: 1 }] : undefined,
             });
 
             setSuccess(true);
@@ -72,7 +72,10 @@ export default function SubmitBidPage({ params }: { params: { jobId: string } })
             }, 2000);
         } catch (err: any) {
             console.error("Failed to submit bid:", err);
-            setError(err.response?.data?.message || "Failed to submit bid. Please try again.");
+            console.error("Response data:", JSON.stringify(err.response?.data));
+            const msg = err.response?.data?.message;
+            const detail = Array.isArray(msg) ? msg.join(', ') : (typeof msg === 'string' ? msg : JSON.stringify(err.response?.data));
+            setError(detail || "Failed to submit bid. Please try again.");
             setIsSubmitting(false);
         }
     };
@@ -187,11 +190,11 @@ export default function SubmitBidPage({ params }: { params: { jobId: string } })
                                                     />
                                                     <div>
                                                         <p className="font-bold text-main">{item.name}</p>
-                                                        <p className="text-xs text-muted uppercase tracking-wider">{item.category}</p>
+                                                        <p className="text-xs text-muted">{item.description || 'No description'}</p>
                                                     </div>
                                                 </div>
                                                 <div className="text-right">
-                                                    <p className="font-bold text-primary">${item.daily_rate}/day</p>
+                                                    <p className="font-bold text-primary">${item.price_per_day}/day</p>
                                                     <p className="text-[10px] text-muted">Standard Rate</p>
                                                 </div>
                                             </label>
@@ -222,7 +225,7 @@ export default function SubmitBidPage({ params }: { params: { jobId: string } })
                                     </div>
                                     {selectedItem && formData.bid_amount && (
                                         <div className="mt-2 text-sm text-muted bg-surface-hover/50 p-3 rounded-lg border border-subtle">
-                                            A standard rental of this item for <strong className="text-primary">${selectedItem.daily_rate}/day</strong> over the requested duration might vary from your bulk quote. Make sure your total encompasses logistics.
+                                            A standard rental of this item for <strong className="text-primary">${selectedItem.price_per_day}/day</strong> over the requested duration might vary from your bulk quote. Make sure your total encompasses logistics.
                                         </div>
                                     )}
                                 </div>

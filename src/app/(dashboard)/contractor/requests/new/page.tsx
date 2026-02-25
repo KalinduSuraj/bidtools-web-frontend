@@ -50,7 +50,6 @@ export default function NewRequestPage() {
             // Note: In a real app, geocode the formData.location. 
             // Here we use dummy coordinates for the demo.
             const payload = {
-                contractor_id: user.user_id,
                 job_description: jobDescription,
                 latitude: 37.7749,
                 longitude: -122.4194,

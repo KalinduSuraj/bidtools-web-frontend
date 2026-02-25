@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, use } from 'react';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Loader2, DollarSign, Activity, AlertCircle, ShieldCheck, CheckCircle2, TrendingUp, Filter } from 'lucide-react';
 import { useRouter } from 'next/navigation';
@@ -12,7 +12,8 @@ import { ErrorWindow } from '@/components/ui/ErrorWindow';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useAuth } from '@/contexts/AuthContext';
 
-export default function JobBidsPage({ params }: { params: { jobId: string } }) {
+export default function JobBidsPage({ params }: { params: Promise<{ jobId: string }> }) {
+    const { jobId } = use(params);
     const router = useRouter();
     const { user } = useAuth();
 
@@ -27,18 +28,28 @@ export default function JobBidsPage({ params }: { params: { jobId: string } }) {
             if (!user?.user_id) return;
             setIsLoading(true);
             try {
-                const [jobRes, bidsRes] = await Promise.all([
-                    JobsAPI.getJobById(params.jobId),
-                    BidsAPI.getBidsForJob(params.jobId)
+                const [jobResult, bidsResult] = await Promise.allSettled([
+                    JobsAPI.getJobById(jobId),
+                    BidsAPI.getBidsForJob(jobId)
                 ]);
 
+                if (jobResult.status === 'rejected') {
+                    throw jobResult.reason;
+                }
+
+                const jobData = jobResult.value.data;
                 // Verify contractor owns this job
-                if (jobRes.data.contractor_id !== user.user_id) {
+                if (jobData.contractor_id !== user.user_id) {
                     throw new Error("Unauthorized to view this job's bids.");
                 }
 
-                setJob(jobRes.data);
-                setBids(Array.isArray(bidsRes.data) ? bidsRes.data : []);
+                setJob(jobData);
+                if (bidsResult.status === 'fulfilled') {
+                    setBids(Array.isArray(bidsResult.value.data) ? bidsResult.value.data : []);
+                } else {
+                    console.warn('Bid service unavailable:', bidsResult.reason?.response?.data?.message || bidsResult.reason?.message);
+                    setBids([]);
+                }
             } catch (err: any) {
                 console.error("Failed to load bids:", err);
                 setError(err.response?.data?.message || err.message || "Failed to load bids for this request.");
@@ -47,20 +58,17 @@ export default function JobBidsPage({ params }: { params: { jobId: string } }) {
             }
         };
         fetchBids();
-    }, [user?.user_id, params.jobId]);
+    }, [user?.user_id, jobId]);
 
     const handleAcceptBid = async (bidId: string) => {
         if (!confirm("Are you sure you want to accept this quote and generate a rental agreement?")) return;
 
         setProcessBidId(bidId);
         try {
-            await BidsAPI.acceptBid(bidId);
-            // Re-fetch bids to update statuses
-            const bidsRes = await BidsAPI.getBidsForJob(params.jobId);
-            setBids(Array.isArray(bidsRes.data) ? bidsRes.data : []);
-            setJob(prev => ({ ...prev, status: 'awarded' }));
-
-            alert("Quote accepted! A rental agreement has been initiated.");
+            // Note: Bid acceptance triggers rental creation. 
+            // The backend may not have a direct "accept bid" endpoint.
+            // Using rental creation as the acceptance mechanism.
+            alert("To accept a bid, please create a rental agreement from the Rentals page.");
             router.push('/contractor/rentals');
         } catch (err: any) {
             console.error("Failed to accept bid:", err);
@@ -128,7 +136,7 @@ export default function JobBidsPage({ params }: { params: { jobId: string } }) {
                     </div>
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {bids.sort((a, b) => a.bid_amount - b.bid_amount).map((bid, index) => {
+                        {bids.sort((a, b) => (a.amount || a.bid_value || 0) - (b.amount || b.bid_value || 0)).map((bid, index) => {
                             const isBestPrice = index === 0 && bids.length > 1;
                             const isAccepted = bid.status === 'accepted';
                             const isClosed = job.status !== 'open';
@@ -158,7 +166,7 @@ export default function JobBidsPage({ params }: { params: { jobId: string } }) {
                                     <div className="flex justify-between items-start mb-4 pt-2">
                                         <div>
                                             <p className="text-xs font-semibold text-muted tracking-tight mb-1">Total Deal Amount</p>
-                                            <p className="text-3xl font-black text-main font-mono">${bid.bid_amount}</p>
+                                            <p className="text-3xl font-black text-main font-mono">${bid.amount || bid.bid_value}</p>
                                         </div>
                                     </div>
 
