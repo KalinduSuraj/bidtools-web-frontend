@@ -3,7 +3,7 @@
 # - builder: builds the Next.js app
 # - runner: lightweight runtime image with only build outputs
 
-FROM node:18-alpine AS deps
+FROM node:20-alpine AS deps
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -25,7 +25,7 @@ RUN if [ -n "$NPM_TOKEN" ]; then \
 		pnpm install --frozen-lockfile && \
 		rm -f .npmrc || true
 
-FROM node:18-alpine AS builder
+FROM node:20-alpine AS builder
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -40,7 +40,7 @@ COPY . .
 # Build the app (Next.js build)
 RUN pnpm build
 
-FROM node:18-alpine AS runner
+FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
