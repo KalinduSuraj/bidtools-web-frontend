@@ -3,7 +3,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { Activity, Clock, FileText, Search, Filter, ShieldCheck, AlertTriangle, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { apiClient } from '@/lib/api/client';
+import { JobsAPI } from '@/lib/api/jobs.api';
+import { API_URL } from '@/lib/constants';
 
 export default function AdminBiddingMonitor() {
     const [selectedAuction, setSelectedAuction] = useState<string | null>(null);
@@ -16,9 +17,7 @@ export default function AdminBiddingMonitor() {
     useEffect(() => {
         const fetchAuctions = async () => {
             try {
-                const { data } = await apiClient.get('/jobs/nearby', {
-                    params: { latitude: '0', longitude: '0', radiusKm: '999999' }
-                });
+                const { data } = await JobsAPI.getNearbyJobs({ lat: 0, lon: 0, radius: 999999 });
                 setAuctions(Array.isArray(data) ? data.filter((j: any) => j.status === 'open') : []);
             } catch (error) {
                 console.error('Failed to fetch global auctions:', error);
@@ -42,8 +41,8 @@ export default function AdminBiddingMonitor() {
         // Clear previous bids for the new selected stream
         setLiveBids([]);
 
-        // The base URL comes from Axios defaults, but EventSource needs a full string URL
-        const baseURL = apiClient.defaults.baseURL || 'http://localhost:3002';
+        // The base URL for SSE stream
+        const baseURL = API_URL;
 
         // Connect to stream
         const sse = new EventSource(`${baseURL}/bid/stream/${selectedAuction}`);
