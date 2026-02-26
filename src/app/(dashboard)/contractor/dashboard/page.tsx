@@ -9,7 +9,27 @@ import { RentalsAPI } from '@/lib/api/rentals.api';
 import { BidsAPI } from '@/lib/api/bids.api';
 import { BiddingAPI } from '@/lib/api/bidding.api';
 import { ProfilesAPI } from '@/lib/api/profiles.api';
+import { ItemsAPI } from '@/lib/api/items.api';
 import { LoadingWindow } from '@/components/ui/LoadingWindow';
+
+/** Helper: parse the bids object from an auction into a flat array */
+function parseAuctionBids(bidsObj: Record<string, any>, jobId: string): any[] {
+    if (!bidsObj || typeof bidsObj !== 'object') return [];
+    return Object.entries(bidsObj).map(([firebaseKey, val]) => {
+        const bid = typeof val === 'object' ? val : {};
+        return {
+            bid_id: firebaseKey,
+            job_id: jobId,
+            supplier_id: bid.supplierId || bid.supplier_id || '',
+            item_id: bid.itemId || bid.item_id || '',
+            amount: Number(bid.amount || 0),
+            status: bid.status || 'pending',
+            created_at: bid.timestamp ? new Date(bid.timestamp).toISOString() : new Date().toISOString(),
+            timestamp: bid.timestamp,
+            _fromRtdb: true,
+        };
+    });
+}
 import { MapView } from '@/components/map/MapView';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -18,9 +38,11 @@ export default function ContractorDashboard() {
     const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
     const [isLoading, setIsLoading] = useState(true);
     const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
-    const [liveBids, setLiveBids] = useState<any[]>([]);
     const [existingBids, setExistingBids] = useState<any[]>([]);
+    const [rtdbBids, setRtdbBids] = useState<any[]>([]);
     const [bidsLoading, setBidsLoading] = useState(false);
+    const [supplierProfiles, setSupplierProfiles] = useState<Record<string, any>>({});
+    const [itemDetails, setItemDetails] = useState<Record<string, any>>({});
     const [stats, setStats] = useState({
         activeRequests: 0,
         awardedJobs: 0,
@@ -61,6 +83,43 @@ export default function ContractorDashboard() {
 
                 setJobs(validJobs);
                 setStats({ activeRequests, awardedJobs, totalSpent });
+
+                // Probe which open jobs have existing auctions via SSE
+                // The /stream endpoint returns 200 + first event if auction exists
+                const openJobs = validJobs.filter(j => j.status === 'open');
+                if (openJobs.length > 0) {
+                    const activeAuctions = new Set<string>();
+                    const probes = openJobs.map(j => {
+                        return new Promise<void>((resolve) => {
+                            const probeSse = new EventSource(BiddingAPI.getStreamUrl(j.job_id));
+                            const timeout = setTimeout(() => {
+                                probeSse.close();
+                                resolve();
+                            }, 3000); // 3s timeout
+                            probeSse.onmessage = (event) => {
+                                clearTimeout(timeout);
+                                probeSse.close();
+                                try {
+                                    const data = JSON.parse(event.data);
+                                    if (data && data.id) {
+                                        activeAuctions.add(j.job_id);
+                                        console.log(`[Init] Auction exists for job ${j.job_id}:`, data.status);
+                                    }
+                                } catch { /* ignore parse errors */ }
+                                resolve();
+                            };
+                            probeSse.onerror = () => {
+                                clearTimeout(timeout);
+                                probeSse.close();
+                                resolve();
+                            };
+                        });
+                    });
+                    await Promise.all(probes);
+                    if (activeAuctions.size > 0) {
+                        setAuctionJobs(activeAuctions);
+                    }
+                }
             } catch (error) {
                 console.error('Failed to fetch contractor data:', error);
             } finally {
@@ -71,27 +130,29 @@ export default function ContractorDashboard() {
         fetchContractorData();
     }, [user]);
 
-    // When a job is selected, fetch existing bids AND connect SSE
+    // When a job is selected, fetch existing bids from main API AND connect SSE for RTDB data
     useEffect(() => {
         if (!selectedJobId) {
             if (eventSourceRef.current) {
                 eventSourceRef.current.close();
                 eventSourceRef.current = null;
             }
-            setLiveBids([]);
             setExistingBids([]);
+            setRtdbBids([]);
             setSelectedBidDetail(null);
             setSupplierProfile(null);
             return;
         }
 
-        // Fetch existing bids from main backend
+        // Fetch existing bids from main backend only
+        // (RTDB data comes from SSE — the /jobs/:id REST endpoint does not exist)
         const fetchBids = async () => {
             setBidsLoading(true);
             try {
                 const { data } = await BidsAPI.getBidsForJob(selectedJobId);
                 setExistingBids(Array.isArray(data) ? data : []);
-            } catch {
+            } catch (err: any) {
+                console.warn('Main bid API unavailable:', err?.message);
                 setExistingBids([]);
             } finally {
                 setBidsLoading(false);
@@ -99,26 +160,41 @@ export default function ContractorDashboard() {
         };
         fetchBids();
 
-        // Clear previous SSE bids
-        setLiveBids([]);
         setSelectedBidDetail(null);
         setSupplierProfile(null);
 
-        // Connect to SSE stream
+        // Connect to SSE stream — SSE sends the full auction state immediately on connect,
+        // then again on every change. This is the ONLY way to get RTDB data.
         const sse = new EventSource(BiddingAPI.getStreamUrl(selectedJobId));
         eventSourceRef.current = sse;
 
         sse.onmessage = (event) => {
             try {
-                const newBid = JSON.parse(event.data);
-                setLiveBids(prev => [{ ...newBid, receivedAt: new Date().toLocaleTimeString() }, ...prev]);
+                const auctionState = JSON.parse(event.data);
+                console.log('[SSE] Auction state received for', selectedJobId, ':', JSON.stringify(auctionState, null, 2));
+
+                // Mark auction as active since we're receiving SSE events
+                setAuctionJobs(prev => new Set(prev).add(selectedJobId));
+
+                // SSE sends: { id, bids: { key: { amount, itemId, supplierId, timestamp } }, status, ... }
+                const bidsObj = auctionState?.bids;
+                if (bidsObj && typeof bidsObj === 'object' && Object.keys(bidsObj).length > 0) {
+                    const parsed = parseAuctionBids(bidsObj, selectedJobId);
+                    setRtdbBids(parsed);
+                } else {
+                    // Auction state arrived but no bids yet
+                    setRtdbBids([]);
+                }
+
+                // Stop loading once first SSE message arrives
+                setBidsLoading(false);
             } catch (err) {
-                console.error("Error parsing SSE data:", err);
+                console.error("Error parsing SSE data:", err, 'Raw:', event.data);
             }
         };
 
         sse.onerror = () => {
-            console.error("SSE connection error");
+            console.error("SSE connection error for job", selectedJobId);
         };
 
         return () => {
@@ -127,6 +203,71 @@ export default function ContractorDashboard() {
             }
         };
     }, [selectedJobId]);
+
+    // Fetch supplier details for all unique supplier IDs across bids
+    useEffect(() => {
+        const allSupplierIds = new Set<string>();
+        [...existingBids, ...rtdbBids].forEach(b => {
+            const sid = b.supplier_id || b.supplierId;
+            if (sid) allSupplierIds.add(sid);
+        });
+
+        const newIds = [...allSupplierIds].filter(id => !supplierProfiles[id]);
+        if (newIds.length === 0) return;
+
+        const fetchSupplierDetails = async () => {
+            const results = await Promise.allSettled(
+                newIds.map(async (id) => {
+                    try {
+                        return await ProfilesAPI.getSupplierProfile(id);
+                    } catch {
+                        return await ProfilesAPI.getProfileByUserId(id);
+                    }
+                })
+            );
+            const newProfiles: Record<string, any> = {};
+            results.forEach((result, idx) => {
+                if (result.status === 'fulfilled') {
+                    const profile = result.value.data;
+                    newProfiles[newIds[idx]] = Array.isArray(profile) ? profile[0] : profile;
+                }
+            });
+            if (Object.keys(newProfiles).length > 0) {
+                setSupplierProfiles(prev => ({ ...prev, ...newProfiles }));
+            }
+        };
+        fetchSupplierDetails();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [existingBids, rtdbBids]);
+
+    // Fetch item details for all unique item IDs across bids
+    useEffect(() => {
+        const allItemIds = new Set<string>();
+        [...existingBids, ...rtdbBids].forEach(b => {
+            const iid = b.item_id || b.itemId;
+            if (iid) allItemIds.add(iid);
+        });
+
+        const newIds = [...allItemIds].filter(id => !itemDetails[id]);
+        if (newIds.length === 0) return;
+
+        const fetchItems = async () => {
+            const results = await Promise.allSettled(
+                newIds.map(id => ItemsAPI.getItemById(id))
+            );
+            const newItems: Record<string, any> = {};
+            results.forEach((result, idx) => {
+                if (result.status === 'fulfilled') {
+                    newItems[newIds[idx]] = result.value.data;
+                }
+            });
+            if (Object.keys(newItems).length > 0) {
+                setItemDetails(prev => ({ ...prev, ...newItems }));
+            }
+        };
+        fetchItems();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [existingBids, rtdbBids]);
 
     // Fetch supplier profile when a bid is selected for detail view
     const handleViewBidDetail = async (bid: any) => {
@@ -220,24 +361,36 @@ export default function ContractorDashboard() {
         }
     };
 
-    // Combine existing bids + live SSE bids (dedup by bid_id)
+    // Combine existing bids + RTDB bids (dedup by bid_id)
     const allBids = (() => {
-        const existingIds = new Set(existingBids.map(b => b.bid_id));
-        const liveMapped = liveBids
-            .filter(b => !existingIds.has(b.bid_id))
-            .map(b => ({
-                bid_id: b.bid_id || `live-${b.receivedAt}-${Math.random()}`,
-                job_id: selectedJobId,
-                supplier_id: b.supplierId || b.supplier_id,
-                amount: b.amount,
-                status: 'pending' as const,
-                items: b.itemId ? [{ item_id: b.itemId, quantity: 1 }] : [],
-                created_at: new Date().toISOString(),
+        const seen = new Set<string>();
+        const merged: any[] = [];
+
+        existingBids.forEach(b => {
+            if (b.bid_id) seen.add(b.bid_id);
+            const sid = b.supplier_id || b.supplierId;
+            const iid = b.item_id || b.itemId;
+            merged.push({
+                ...b,
+                supplier: supplierProfiles[sid] || b.supplier,
+                item: itemDetails[iid] || b.item,
+            });
+        });
+
+        rtdbBids.forEach(b => {
+            if (b.bid_id && seen.has(b.bid_id)) return;
+            if (b.bid_id) seen.add(b.bid_id);
+            const sid = b.supplier_id;
+            const iid = b.item_id;
+            merged.push({
+                ...b,
+                supplier: supplierProfiles[sid],
+                item: itemDetails[iid],
                 _isLive: true,
-                receivedAt: b.receivedAt,
-                itemId: b.itemId,
-            }));
-        return [...liveMapped, ...existingBids];
+            });
+        });
+
+        return merged;
     })();
 
     const selectedJob = jobs.find(j => j.job_id === selectedJobId);
@@ -444,7 +597,7 @@ export default function ContractorDashboard() {
                     <div className="flex items-center justify-between">
                         <h2 className="text-xl font-bold flex items-center gap-2">
                             Bids to Review
-                            {selectedJobId && liveBids.length > 0 && <span className="bg-accent-success/20 text-accent-success text-xs px-2 py-0.5 rounded animate-pulse">Live</span>}
+                            {selectedJobId && rtdbBids.length > 0 && <span className="bg-accent-success/20 text-accent-success text-xs px-2 py-0.5 rounded animate-pulse">Live</span>}
                         </h2>
 
                         {/* View Toggle */}
@@ -476,8 +629,15 @@ export default function ContractorDashboard() {
                                 ) : allBids.length === 0 ? (
                                     <div className="flex-1 flex flex-col items-center justify-center text-center p-8 text-muted bg-base/50" style={{ minHeight: '420px' }}>
                                         <Activity className="w-12 h-12 text-primary opacity-50 mx-auto mb-4 animate-bounce" />
-                                        <p className="font-bold text-main mb-1">Waiting for Bids...</p>
-                                        <p className="text-sm max-w-sm">No bids yet. Start live bidding to allow suppliers to submit their offers in real-time.</p>
+                                        <p className="font-bold text-main mb-1">
+                                            {auctionJobs.has(selectedJobId!) ? 'Waiting for Bids...' : 'Live Bidding Not Started'}
+                                        </p>
+                                        <p className="text-sm max-w-sm">
+                                            {auctionJobs.has(selectedJobId!)
+                                                ? 'The auction is active. Bids from suppliers will appear here in real-time as they come in.'
+                                                : 'Click "Start Live Bidding" on the job card to register this job in the bidding service and allow suppliers to submit real-time bids.'
+                                            }
+                                        </p>
                                     </div>
                                 ) : (
                                     <div className="overflow-y-auto flex-1 relative">
@@ -518,7 +678,7 @@ export default function ContractorDashboard() {
                                                                             <User className="w-4 h-4 text-primary" />
                                                                         </div>
                                                                         <div className="min-w-0">
-                                                                            <p className="font-bold text-main text-sm truncate max-w-[120px]" title={supplierId}>{supplierId?.split('-')[0] || 'Unknown'}</p>
+                                                                            <p className="font-bold text-main text-sm truncate max-w-[120px]" title={supplierId}>{bid.supplier?.company_name || bid.supplier?.name || supplierId?.split('-')[0] || 'Unknown'}</p>
                                                                             {isLive && <span className="text-[10px] text-accent-success font-bold">LIVE</span>}
                                                                         </div>
                                                                     </div>
@@ -528,7 +688,7 @@ export default function ContractorDashboard() {
                                                                 </td>
                                                                 <td className="p-3">
                                                                     <span className="text-xs text-muted">
-                                                                        {bid.items?.length || 0} item{(bid.items?.length || 0) !== 1 ? 's' : ''}
+                                                                        {bid.item?.name || bid.item_id?.split('-')[0] || (bid.items?.length ? `${bid.items.length} item${bid.items.length !== 1 ? 's' : ''}` : '—')}
                                                                     </span>
                                                                 </td>
                                                                 <td className="p-3">

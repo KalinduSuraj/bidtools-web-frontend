@@ -6,7 +6,27 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { JobsAPI } from '@/lib/api/jobs.api';
 import { BidsAPI } from '@/lib/api/bids.api';
 import { BiddingAPI } from '@/lib/api/bidding.api';
+import { ProfilesAPI } from '@/lib/api/profiles.api';
+import { ItemsAPI } from '@/lib/api/items.api';
 import { EmptyState } from '@/components/ui/EmptyState';
+
+function parseAuctionBids(bidsObj: Record<string, any>, jobId: string): any[] {
+    if (!bidsObj || typeof bidsObj !== 'object') return [];
+    return Object.entries(bidsObj).map(([firebaseKey, val]) => {
+        const bid = typeof val === 'object' ? val : {};
+        return {
+            bid_id: firebaseKey,
+            job_id: jobId,
+            supplier_id: bid.supplierId || bid.supplier_id || '',
+            item_id: bid.itemId || bid.item_id || '',
+            amount: Number(bid.amount || 0),
+            status: bid.status || 'pending',
+            created_at: bid.timestamp ? new Date(bid.timestamp).toISOString() : new Date().toISOString(),
+            timestamp: bid.timestamp,
+            _fromRtdb: true,
+        };
+    });
+}
 
 export default function AdminBiddingMonitor() {
     const [allJobs, setAllJobs] = useState<any[]>([]);
@@ -14,10 +34,12 @@ export default function AdminBiddingMonitor() {
     const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
     const [selectedJobBids, setSelectedJobBids] = useState<any[]>([]);
     const [bidsLoading, setBidsLoading] = useState(false);
-    const [liveBids, setLiveBids] = useState<any[]>([]);
+    const [rtdbBids, setRtdbBids] = useState<any[]>([]);
     const [sseConnected, setSseConnected] = useState(false);
     const [jobSearch, setJobSearch] = useState('');
     const [jobStatusFilter, setJobStatusFilter] = useState<string>('all');
+    const [supplierProfiles, setSupplierProfiles] = useState<Record<string, any>>({});
+    const [itemDetails, setItemDetails] = useState<Record<string, any>>({});
     const eventSourceRef = useRef<EventSource | null>(null);
 
     // Fetch all jobs
@@ -43,7 +65,7 @@ export default function AdminBiddingMonitor() {
             eventSourceRef.current = null;
             setSseConnected(false);
         }
-        setLiveBids([]);
+        setRtdbBids([]);
         setSelectedJobBids([]);
 
         if (!selectedJobId) return;
@@ -68,8 +90,11 @@ export default function AdminBiddingMonitor() {
         sse.onopen = () => setSseConnected(true);
         sse.onmessage = (event) => {
             try {
-                const bid = JSON.parse(event.data);
-                setLiveBids(prev => [{ ...bid, receivedAt: new Date().toLocaleTimeString() }, ...prev]);
+                const auctionState = JSON.parse(event.data);
+                if (auctionState && typeof auctionState === 'object') {
+                    const parsed = parseAuctionBids(auctionState.bids || {}, selectedJobId);
+                    setRtdbBids(parsed);
+                }
             } catch (err) {
                 console.error('SSE parse error:', err);
             }
@@ -90,6 +115,32 @@ export default function AdminBiddingMonitor() {
         const matchStatus = jobStatusFilter === 'all' || job.status === jobStatusFilter;
         return matchSearch && matchStatus;
     });
+
+    // Fetch supplier profiles for RTDB bids
+    useEffect(() => {
+        const ids = rtdbBids.map(b => b.supplier_id).filter(Boolean);
+        const unique = [...new Set(ids)].filter(id => !supplierProfiles[id]);
+        if (unique.length === 0) return;
+        unique.forEach(async (sid) => {
+            try {
+                const { data } = await ProfilesAPI.getSupplierProfile(sid);
+                if (data) setSupplierProfiles(prev => ({ ...prev, [sid]: data }));
+            } catch { /* ignore */ }
+        });
+    }, [rtdbBids]);
+
+    // Fetch item details for RTDB bids
+    useEffect(() => {
+        const ids = rtdbBids.map(b => b.item_id).filter(Boolean);
+        const unique = [...new Set(ids)].filter(id => !itemDetails[id]);
+        if (unique.length === 0) return;
+        unique.forEach(async (iid) => {
+            try {
+                const { data } = await ItemsAPI.getItemById(iid);
+                if (data) setItemDetails(prev => ({ ...prev, [iid]: data }));
+            } catch { /* ignore */ }
+        });
+    }, [rtdbBids]);
 
     const selectedJob = allJobs.find(j => j.job_id === selectedJobId);
 
@@ -318,10 +369,10 @@ export default function AdminBiddingMonitor() {
                                         <Radio className={`w-4 h-4 ${sseConnected ? 'text-accent-success animate-pulse' : 'text-muted'}`} />
                                         Live Bid Stream
                                     </h3>
-                                    <span className="text-xs text-muted font-mono">{liveBids.length} live bid{liveBids.length !== 1 ? 's' : ''}</span>
+                                    <span className="text-xs text-muted font-mono">{rtdbBids.length} live bid{rtdbBids.length !== 1 ? 's' : ''}</span>
                                 </div>
                                 <div className="flex-1 overflow-y-auto min-h-0">
-                                    {liveBids.length === 0 ? (
+                                    {rtdbBids.length === 0 ? (
                                         <div className="flex flex-col items-center justify-center text-center p-8 text-muted h-full">
                                             <Activity className={`w-10 h-10 mx-auto mb-3 ${sseConnected ? 'text-primary opacity-50 animate-bounce' : 'opacity-20'}`} />
                                             <p className="font-bold text-main text-sm mb-1">{sseConnected ? 'Listening...' : 'Connecting...'}</p>
@@ -330,7 +381,10 @@ export default function AdminBiddingMonitor() {
                                     ) : (
                                         <div className="divide-y divide-subtle">
                                             <AnimatePresence>
-                                                {liveBids.map((bid, i) => (
+                                                {rtdbBids.map((bid, i) => {
+                                                    const supplierName = supplierProfiles[bid.supplier_id]?.company_name || supplierProfiles[bid.supplier_id]?.full_name || bid.supplier_id?.split('-')[0] || 'Unknown';
+                                                    const itemName = itemDetails[bid.item_id]?.name || bid.item_id?.split('-')[0] || '';
+                                                    return (
                                                     <motion.div
                                                         key={bid.bid_id || `live-${i}`}
                                                         initial={{ opacity: 0, x: -10, backgroundColor: 'var(--color-primary-glow)' }}
@@ -339,14 +393,14 @@ export default function AdminBiddingMonitor() {
                                                         className="px-4 py-3 hover:bg-surface-hover/30 transition-colors flex items-center justify-between"
                                                     >
                                                         <div className="flex items-center gap-4">
-                                                            <span className="text-lg font-black font-mono text-main">${bid.amount}</span>
+                                                            <span className="text-lg font-black font-mono text-main">${Number(bid.amount).toFixed(2)}</span>
                                                             <div>
-                                                                <p className="text-xs text-muted">Supplier: <span className="font-bold text-main">{bid.supplierId?.split('-')[0] || 'Unknown'}</span></p>
-                                                                {bid.itemId && <p className="text-[10px] text-muted">Item: {bid.itemId?.split('-')[0]}</p>}
+                                                                <p className="text-xs text-muted">Supplier: <span className="font-bold text-main">{supplierName}</span></p>
+                                                                {bid.item_id && <p className="text-[10px] text-muted">Item: {itemName}</p>}
                                                             </div>
                                                         </div>
                                                         <div className="text-right">
-                                                            <span className="text-[10px] font-mono text-muted">{bid.receivedAt}</span>
+                                                            <span className="text-[10px] font-mono text-muted">{bid.created_at ? new Date(bid.created_at).toLocaleTimeString() : '—'}</span>
                                                             <div className="mt-1">
                                                                 {bid.amount < 100 ? (
                                                                     <span className="inline-flex items-center gap-1 text-accent-danger text-[10px] font-bold">
@@ -360,7 +414,8 @@ export default function AdminBiddingMonitor() {
                                                             </div>
                                                         </div>
                                                     </motion.div>
-                                                ))}
+                                                    );
+                                                })}
                                             </AnimatePresence>
                                         </div>
                                     )}

@@ -12,14 +12,33 @@ import { RentalsAPI } from '@/lib/api/rentals.api';
 import { BidsAPI } from '@/lib/api/bids.api';
 import { BiddingAPI } from '@/lib/api/bidding.api';
 import { ProfilesAPI } from '@/lib/api/profiles.api';
+import { ItemsAPI } from '@/lib/api/items.api';
 import { LoadingWindow } from '@/components/ui/LoadingWindow';
 import { useAuth } from '@/contexts/AuthContext';
+
+/** Helper: parse the bids object from an auction into a flat array */
+function parseAuctionBids(bidsObj: Record<string, any>, jobId: string): any[] {
+    if (!bidsObj || typeof bidsObj !== 'object') return [];
+    return Object.entries(bidsObj).map(([firebaseKey, val]) => {
+        const bid = typeof val === 'object' ? val : {};
+        return {
+            bid_id: firebaseKey,
+            job_id: jobId,
+            supplier_id: bid.supplierId || bid.supplier_id || '',
+            item_id: bid.itemId || bid.item_id || '',
+            amount: Number(bid.amount || 0),
+            status: bid.status || 'pending',
+            created_at: bid.timestamp ? new Date(bid.timestamp).toISOString() : new Date().toISOString(),
+            timestamp: bid.timestamp,
+            _fromRtdb: true,
+        };
+    });
+}
 
 export default function BidManagementPage() {
     const { user } = useAuth();
     const [isLoading, setIsLoading] = useState(true);
     const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
-    const [liveBids, setLiveBids] = useState<any[]>([]);
     const [existingBids, setExistingBids] = useState<any[]>([]);
     const [bidsLoading, setBidsLoading] = useState(false);
     const [jobs, setJobs] = useState<any[]>([]);
@@ -34,6 +53,9 @@ export default function BidManagementPage() {
     const [supplierProfile, setSupplierProfile] = useState<any | null>(null);
     const [profileLoading, setProfileLoading] = useState(false);
     const [confirmModal, setConfirmModal] = useState<any | null>(null);
+    const [rtdbBids, setRtdbBids] = useState<any[]>([]);
+    const [supplierProfiles, setSupplierProfiles] = useState<Record<string, any>>({});
+    const [itemDetails, setItemDetails] = useState<Record<string, any>>({});
 
     const eventSourceRef = useRef<EventSource | null>(null);
 
@@ -60,7 +82,6 @@ export default function BidManagementPage() {
                 eventSourceRef.current.close();
                 eventSourceRef.current = null;
             }
-            setLiveBids([]);
             setExistingBids([]);
             setSelectedBidDetail(null);
             setSupplierProfile(null);
@@ -70,9 +91,11 @@ export default function BidManagementPage() {
         const fetchBids = async () => {
             setBidsLoading(true);
             try {
+                // Fetch from main API only — RTDB data comes from SSE (the /jobs/:id REST endpoint doesn't exist)
                 const { data } = await BidsAPI.getBidsForJob(selectedJobId);
                 setExistingBids(Array.isArray(data) ? data : []);
-            } catch {
+            } catch (err: any) {
+                console.warn('Main bid API unavailable:', err?.message);
                 setExistingBids([]);
             } finally {
                 setBidsLoading(false);
@@ -80,7 +103,6 @@ export default function BidManagementPage() {
         };
         fetchBids();
 
-        setLiveBids([]);
         setSelectedBidDetail(null);
         setSupplierProfile(null);
 
@@ -89,10 +111,20 @@ export default function BidManagementPage() {
 
         sse.onmessage = (event) => {
             try {
-                const newBid = JSON.parse(event.data);
-                setLiveBids(prev => [{ ...newBid, receivedAt: new Date().toLocaleTimeString() }, ...prev]);
+                const auctionState = JSON.parse(event.data);
+                console.log('[SSE] Auction state received:', JSON.stringify(auctionState, null, 2));
+
+                // SSE sends the FULL auction object on connect + on every change:
+                // { id, bids: { key: { amount, itemId, supplierId, timestamp } }, status, ... }
+                const bidsObj = auctionState?.bids;
+                if (bidsObj && typeof bidsObj === 'object' && Object.keys(bidsObj).length > 0) {
+                    const parsed = parseAuctionBids(bidsObj, selectedJobId);
+                    setRtdbBids(parsed);
+                } else {
+                    setRtdbBids([]);
+                }
             } catch (err) {
-                console.error('Error parsing SSE data:', err);
+                console.error('Error parsing SSE data:', err, 'Raw:', event.data);
             }
         };
 
@@ -106,13 +138,23 @@ export default function BidManagementPage() {
     // View bid detail
     const handleViewBidDetail = async (bid: any) => {
         setSelectedBidDetail(bid);
-        setSupplierProfile(null);
         const supplierId = bid.supplier_id || bid.supplierId;
+
+        // Use already-fetched supplier profile if available
+        if (supplierId && supplierProfiles[supplierId]) {
+            setSupplierProfile(supplierProfiles[supplierId]);
+            return;
+        }
+
+        setSupplierProfile(null);
         if (supplierId) {
             setProfileLoading(true);
             try {
-                const { data } = await ProfilesAPI.getProfileByUserId(supplierId);
-                setSupplierProfile(Array.isArray(data) ? data[0] : data);
+                const { data } = await ProfilesAPI.getSupplierProfile(supplierId);
+                const profile = Array.isArray(data) ? data[0] : data;
+                setSupplierProfile(profile);
+                // Cache it
+                setSupplierProfiles(prev => ({ ...prev, [supplierId]: profile }));
             } catch {
                 setSupplierProfile(null);
             } finally {
@@ -192,24 +234,103 @@ export default function BidManagementPage() {
         }
     };
 
-    // Combine existing + live SSE bids (dedup by bid_id)
+    // Fetch supplier details for all unique supplier IDs across all bid sources
+    useEffect(() => {
+        const allSupplierIds = new Set<string>();
+        [...existingBids, ...rtdbBids].forEach(b => {
+            const sid = b.supplier_id || b.supplierId;
+            if (sid) allSupplierIds.add(sid);
+        });
+
+        const newIds = [...allSupplierIds].filter(id => !supplierProfiles[id]);
+        if (newIds.length === 0) return;
+
+        const fetchSupplierDetails = async () => {
+            const results = await Promise.allSettled(
+                newIds.map(async (id) => {
+                    try {
+                        return await ProfilesAPI.getSupplierProfile(id);
+                    } catch {
+                        return await ProfilesAPI.getProfileByUserId(id);
+                    }
+                })
+            );
+            const newProfiles: Record<string, any> = {};
+            results.forEach((result, idx) => {
+                if (result.status === 'fulfilled') {
+                    const profile = result.value.data;
+                    newProfiles[newIds[idx]] = Array.isArray(profile) ? profile[0] : profile;
+                }
+            });
+            if (Object.keys(newProfiles).length > 0) {
+                setSupplierProfiles(prev => ({ ...prev, ...newProfiles }));
+            }
+        };
+        fetchSupplierDetails();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [existingBids, rtdbBids]);
+
+    // Fetch item details for all unique item IDs across all bid sources
+    useEffect(() => {
+        const allItemIds = new Set<string>();
+        [...existingBids, ...rtdbBids].forEach(b => {
+            const iid = b.item_id || b.itemId;
+            if (iid) allItemIds.add(iid);
+        });
+
+        const newIds = [...allItemIds].filter(id => !itemDetails[id]);
+        if (newIds.length === 0) return;
+
+        const fetchItems = async () => {
+            const results = await Promise.allSettled(
+                newIds.map(id => ItemsAPI.getItemById(id))
+            );
+            const newItems: Record<string, any> = {};
+            results.forEach((result, idx) => {
+                if (result.status === 'fulfilled') {
+                    newItems[newIds[idx]] = result.value.data;
+                }
+            });
+            if (Object.keys(newItems).length > 0) {
+                setItemDetails(prev => ({ ...prev, ...newItems }));
+            }
+        };
+        fetchItems();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [existingBids, rtdbBids]);
+
+    // Combine existing bids (main API) + RTDB bids (dedup by bid_id)
     const allBids = (() => {
-        const existingIds = new Set(existingBids.map(b => b.bid_id));
-        const liveMapped = liveBids
-            .filter(b => !existingIds.has(b.bid_id))
-            .map(b => ({
-                bid_id: b.bid_id || `live-${b.receivedAt}-${Math.random()}`,
-                job_id: selectedJobId,
-                supplier_id: b.supplierId || b.supplier_id,
-                amount: b.amount,
-                status: 'pending' as const,
-                items: b.itemId ? [{ item_id: b.itemId, quantity: 1 }] : [],
-                created_at: new Date().toISOString(),
-                _isLive: true,
-                receivedAt: b.receivedAt,
-                itemId: b.itemId,
-            }));
-        return [...liveMapped, ...existingBids];
+        const seen = new Set<string>();
+        const merged: any[] = [];
+
+        // First: existing bids from main API
+        existingBids.forEach(b => {
+            if (b.bid_id) seen.add(b.bid_id);
+            const sid = b.supplier_id || b.supplierId;
+            const iid = b.item_id || b.itemId;
+            merged.push({
+                ...b,
+                supplier: supplierProfiles[sid] || b.supplier,
+                item: itemDetails[iid] || b.item,
+            });
+        });
+
+        // Second: RTDB bids not already in main API
+        rtdbBids.forEach(b => {
+            if (b.bid_id && seen.has(b.bid_id)) return;
+            if (b.bid_id) seen.add(b.bid_id);
+            const sid = b.supplier_id;
+            const iid = b.item_id;
+            merged.push({
+                ...b,
+                supplier: supplierProfiles[sid],
+                item: itemDetails[iid],
+                _fromRtdb: true,
+            });
+        });
+
+        return merged;
     })();
 
     const selectedJob = jobs.find(j => j.job_id === selectedJobId);
@@ -417,7 +538,7 @@ export default function BidManagementPage() {
                     <div className="flex items-center justify-between">
                         <h2 className="text-lg font-bold flex items-center gap-2">
                             Bids to Review
-                            {selectedJobId && liveBids.length > 0 && <span className="bg-accent-success/20 text-accent-success text-xs px-2 py-0.5 rounded animate-pulse">Live</span>}
+                            {selectedJobId && rtdbBids.length > 0 && <span className="bg-accent-success/20 text-accent-success text-xs px-2 py-0.5 rounded animate-pulse">Live</span>}
                         </h2>
                     </div>
 
@@ -479,8 +600,8 @@ export default function BidManagementPage() {
                                                                     <User className="w-4 h-4 text-primary" />
                                                                 </div>
                                                                 <div className="min-w-0">
-                                                                    <p className="font-bold text-main text-sm truncate max-w-[120px]" title={supplierId}>{supplierId?.split('-')[0] || 'Unknown'}</p>
-                                                                    {isLive && <span className="text-[10px] text-accent-success font-bold">LIVE</span>}
+                                                                    <p className="font-bold text-main text-sm truncate max-w-[120px]" title={supplierId}>{bid.supplier?.company_name || bid.supplier?.name || supplierId?.split('-')[0] || 'Unknown'}</p>
+                                                                    {(bid as any)._fromRtdb && <span className="text-[10px] text-primary font-bold">RTDB</span>}
                                                                 </div>
                                                             </div>
                                                         </td>
@@ -488,7 +609,7 @@ export default function BidManagementPage() {
                                                             <span className="font-black text-lg font-mono text-main">${Number(bid.amount || 0).toFixed(0)}</span>
                                                         </td>
                                                         <td className="p-3">
-                                                            <span className="text-xs text-muted">{bid.items?.length || 0} item{(bid.items?.length || 0) !== 1 ? 's' : ''}</span>
+                                                            <span className="text-xs text-main">{bid.item?.name || (bid.item_id ? bid.item_id.split('-')[0] : '—')}</span>
                                                         </td>
                                                         <td className="p-3">
                                                             <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${

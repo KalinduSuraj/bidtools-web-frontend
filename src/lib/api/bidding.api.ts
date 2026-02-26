@@ -28,6 +28,20 @@ export const BiddingAPI = {
         biddingClient.post('/jobs', data),
 
     /**
+     * GET /jobs/:jobId — Fetch the job auction data (including all bids)
+     * from the Firebase Realtime Database.
+     */
+    getJobAuction: async (jobId: string) =>
+        biddingClient.get(`/jobs/${jobId}`),
+
+    /**
+     * GET /jobs/:jobId/bids — Fetch all bids for a specific job auction
+     * from the Firebase Realtime Database.
+     */
+    getJobBids: async (jobId: string) =>
+        biddingClient.get(`/jobs/${jobId}/bids`),
+
+    /**
      * POST /jobs/:jobId/bid — Place a bid on a specific job auction.
      * Used by suppliers to submit a live bid.
      */

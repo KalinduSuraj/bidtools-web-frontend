@@ -8,16 +8,37 @@ import { useAuth } from '@/contexts/AuthContext';
 import { JobsAPI } from '@/lib/api/jobs.api';
 import { BidsAPI } from '@/lib/api/bids.api';
 import { BiddingAPI } from '@/lib/api/bidding.api';
+import { ProfilesAPI } from '@/lib/api/profiles.api';
+import { ItemsAPI } from '@/lib/api/items.api';
 import { LoadingWindow } from '@/components/ui/LoadingWindow';
 import { ErrorWindow } from '@/components/ui/ErrorWindow';
 import { EmptyState } from '@/components/ui/EmptyState';
+
+/** Helper: parse the bids object from an auction into a flat array */
+function parseAuctionBids(bidsObj: Record<string, any>, jobId: string): any[] {
+    if (!bidsObj || typeof bidsObj !== 'object') return [];
+    return Object.entries(bidsObj).map(([firebaseKey, val]) => {
+        const bid = typeof val === 'object' ? val : {};
+        return {
+            bid_id: firebaseKey,
+            job_id: jobId,
+            supplier_id: bid.supplierId || bid.supplier_id || '',
+            item_id: bid.itemId || bid.item_id || '',
+            amount: Number(bid.amount || 0),
+            status: bid.status || 'pending',
+            created_at: bid.timestamp ? new Date(bid.timestamp).toISOString() : new Date().toISOString(),
+            timestamp: bid.timestamp,
+            _fromRtdb: true,
+        };
+    });
+}
 
 export default function ContractorRequestDetailPage({ params }: { params: Promise<{ jobId: string }> }) {
     const { jobId } = use(params);
     const { user } = useAuth();
     const [job, setJob] = useState<any>(null);
     const [bids, setBids] = useState<any[]>([]);
-    const [liveBids, setLiveBids] = useState<any[]>([]);
+    const [rtdbBids, setRtdbBids] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [processingBidId, setProcessingBidId] = useState<string | null>(null);
@@ -25,6 +46,8 @@ export default function ContractorRequestDetailPage({ params }: { params: Promis
     const [auctionActive, setAuctionActive] = useState(false);
     const [isStartingAuction, setIsStartingAuction] = useState(false);
     const [auctionError, setAuctionError] = useState<string | null>(null);
+    const [supplierProfiles, setSupplierProfiles] = useState<Record<string, any>>({});
+    const [itemDetails, setItemDetails] = useState<Record<string, any>>({});
     const eventSourceRef = useRef<EventSource | null>(null);
 
     useEffect(() => {
@@ -59,7 +82,8 @@ export default function ContractorRequestDetailPage({ params }: { params: Promis
         fetchData();
     }, [user?.user_id, jobId]);
 
-    // Connect to live SSE stream for real-time bids
+    // Connect to SSE stream — SSE sends the full auction state immediately on connect + on every change
+    // This is the ONLY way to get RTDB data (the /jobs/:id REST endpoint does not exist)
     useEffect(() => {
         const streamUrl = BiddingAPI.getStreamUrl(jobId);
         const sse = new EventSource(streamUrl);
@@ -69,8 +93,17 @@ export default function ContractorRequestDetailPage({ params }: { params: Promis
 
         sse.onmessage = (event) => {
             try {
-                const newBid = JSON.parse(event.data);
-                setLiveBids(prev => [{ ...newBid, receivedAt: new Date().toLocaleTimeString() }, ...prev]);
+                const auctionState = JSON.parse(event.data);
+                console.log('[SSE] Auction state received:', JSON.stringify(auctionState, null, 2));
+
+                const bidsObj = auctionState?.bids;
+                if (bidsObj && typeof bidsObj === 'object' && Object.keys(bidsObj).length > 0) {
+                    const parsed = parseAuctionBids(bidsObj, jobId);
+                    setRtdbBids(parsed);
+                } else {
+                    setRtdbBids([]);
+                }
+                if (auctionState?.status === 'ACTIVE') setAuctionActive(true);
             } catch (err) {
                 console.error("Error parsing SSE data:", err);
             }
@@ -83,6 +116,71 @@ export default function ContractorRequestDetailPage({ params }: { params: Promis
             eventSourceRef.current = null;
         };
     }, [jobId]);
+
+    // Fetch supplier details for all unique supplier IDs
+    useEffect(() => {
+        const allSupplierIds = new Set<string>();
+        [...bids, ...rtdbBids].forEach(b => {
+            const sid = b.supplier_id || b.supplierId;
+            if (sid) allSupplierIds.add(sid);
+        });
+
+        const newIds = [...allSupplierIds].filter(id => !supplierProfiles[id]);
+        if (newIds.length === 0) return;
+
+        const fetchSupplierDetails = async () => {
+            const results = await Promise.allSettled(
+                newIds.map(async (id) => {
+                    try {
+                        return await ProfilesAPI.getSupplierProfile(id);
+                    } catch {
+                        return await ProfilesAPI.getProfileByUserId(id);
+                    }
+                })
+            );
+            const newProfiles: Record<string, any> = {};
+            results.forEach((result, idx) => {
+                if (result.status === 'fulfilled') {
+                    const profile = result.value.data;
+                    newProfiles[newIds[idx]] = Array.isArray(profile) ? profile[0] : profile;
+                }
+            });
+            if (Object.keys(newProfiles).length > 0) {
+                setSupplierProfiles(prev => ({ ...prev, ...newProfiles }));
+            }
+        };
+        fetchSupplierDetails();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [bids, rtdbBids]);
+
+    // Fetch item details for all unique item IDs
+    useEffect(() => {
+        const allItemIds = new Set<string>();
+        [...bids, ...rtdbBids].forEach(b => {
+            const iid = b.item_id || b.itemId;
+            if (iid) allItemIds.add(iid);
+        });
+
+        const newIds = [...allItemIds].filter(id => !itemDetails[id]);
+        if (newIds.length === 0) return;
+
+        const fetchItems = async () => {
+            const results = await Promise.allSettled(
+                newIds.map(id => ItemsAPI.getItemById(id))
+            );
+            const newItems: Record<string, any> = {};
+            results.forEach((result, idx) => {
+                if (result.status === 'fulfilled') {
+                    newItems[newIds[idx]] = result.value.data;
+                }
+            });
+            if (Object.keys(newItems).length > 0) {
+                setItemDetails(prev => ({ ...prev, ...newItems }));
+            }
+        };
+        fetchItems();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [bids, rtdbBids]);
 
     // Register this job in the bidding service so suppliers can place live bids
     const handleStartAuction = async () => {
@@ -251,11 +349,11 @@ export default function ContractorRequestDetailPage({ params }: { params: Promis
                 <div className="lg:col-span-3 bg-surface border border-subtle rounded-2xl shadow-theme-sm overflow-hidden">
                     <div className="p-4 border-b border-subtle bg-surface-hover/30 flex items-center justify-between">
                         <h3 className="font-bold text-lg flex items-center gap-2">
-                            <Activity className="w-5 h-5 text-primary" /> Received Quotes ({bids.length})
+                            <Activity className="w-5 h-5 text-primary" /> Received Quotes ({bids.length + rtdbBids.length})
                         </h3>
                     </div>
 
-                    {bids.length === 0 ? (
+                    {bids.length === 0 && rtdbBids.length === 0 ? (
                         <div className="p-8">
                             <EmptyState
                                 title="No Bids Yet"
@@ -266,7 +364,10 @@ export default function ContractorRequestDetailPage({ params }: { params: Promis
                     ) : (
                         <div className="divide-y divide-subtle">
                             <AnimatePresence>
-                                {bids.map((bid) => (
+                                {bids.map((bid) => {
+                                    const sid = bid.supplier_id || bid.supplierId;
+                                    const supplierName = supplierProfiles[sid]?.company_name || supplierProfiles[sid]?.name || bid.supplier?.name || sid?.split('-')[0] || 'Unknown';
+                                    return (
                                     <motion.div
                                         key={bid.bid_id}
                                         initial={{ opacity: 0 }}
@@ -287,7 +388,7 @@ export default function ContractorRequestDetailPage({ params }: { params: Promis
                                                     </span>
                                                 </div>
                                                 <p className="text-xs text-muted">
-                                                    Supplier: {bid.supplier?.name || bid.supplier_id?.split('-')[0]} · {new Date(bid.created_at).toLocaleString()}
+                                                    Supplier: <span className="font-semibold text-main">{supplierName}</span> · {new Date(bid.created_at).toLocaleString()}
                                                 </p>
                                             </div>
 
@@ -311,7 +412,37 @@ export default function ContractorRequestDetailPage({ params }: { params: Promis
                                             )}
                                         </div>
                                     </motion.div>
-                                ))}
+                                    );
+                                })}
+                                {/* RTDB bids */}
+                                {rtdbBids.filter(rb => !bids.some(b => b.bid_id === rb.bid_id)).map((bid) => {
+                                    const sid = bid.supplier_id;
+                                    const iid = bid.item_id;
+                                    const supplierName = supplierProfiles[sid]?.company_name || supplierProfiles[sid]?.name || sid?.split('-')[0] || 'Unknown';
+                                    const itemName = itemDetails[iid]?.name || iid?.split('-')[0] || '';
+                                    return (
+                                        <motion.div
+                                            key={bid.bid_id}
+                                            initial={{ opacity: 0 }}
+                                            animate={{ opacity: 1 }}
+                                            className="p-5 hover:bg-surface-hover/30 transition-colors"
+                                        >
+                                            <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
+                                                <div className="flex-1">
+                                                    <div className="flex items-center gap-3 mb-2">
+                                                        <p className="font-bold text-main text-lg">${Number(bid.amount).toFixed(2)}</p>
+                                                        <span className="text-[10px] text-primary font-bold">LIVE</span>
+                                                    </div>
+                                                    <p className="text-xs text-muted">
+                                                        Supplier: <span className="font-semibold text-main">{supplierName}</span>
+                                                        {itemName && <> · Item: <span className="font-semibold">{itemName}</span></>}
+                                                        {bid.created_at && <> · {new Date(bid.created_at).toLocaleString()}</>}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </motion.div>
+                                    );
+                                })}
                             </AnimatePresence>
                         </div>
                     )}
@@ -324,11 +455,11 @@ export default function ContractorRequestDetailPage({ params }: { params: Promis
                             <Radio className={`w-4 h-4 ${sseConnected ? 'text-accent-success animate-pulse' : 'text-muted'}`} />
                             Live Stream
                         </h3>
-                        <span className="text-xs text-muted font-mono">{liveBids.length} incoming</span>
+                        <span className="text-xs text-muted font-mono">{rtdbBids.length} bid{rtdbBids.length !== 1 ? 's' : ''}</span>
                     </div>
 
                     <div className="flex-1 overflow-y-auto min-h-0">
-                        {liveBids.length === 0 ? (
+                        {rtdbBids.length === 0 ? (
                             <div className="flex flex-col items-center justify-center text-center p-6 text-muted h-full">
                                 <Activity className={`w-10 h-10 mx-auto mb-3 ${sseConnected ? 'text-primary opacity-50 animate-bounce' : 'opacity-30'}`} />
                                 <p className="font-bold text-main text-sm mb-1">{sseConnected ? 'Listening...' : 'Connecting...'}</p>
@@ -337,23 +468,30 @@ export default function ContractorRequestDetailPage({ params }: { params: Promis
                         ) : (
                             <div className="divide-y divide-subtle">
                                 <AnimatePresence>
-                                    {liveBids.map((bid, i) => (
-                                        <motion.div
-                                            key={bid.bid_id || `live-${i}`}
-                                            initial={{ opacity: 0, x: -10, backgroundColor: 'var(--color-primary-glow)' }}
-                                            animate={{ opacity: 1, x: 0, backgroundColor: 'transparent' }}
-                                            transition={{ duration: 0.4 }}
-                                            className="p-3 hover:bg-surface-hover/30 transition-colors"
-                                        >
-                                            <div className="flex items-center justify-between mb-1">
-                                                <span className="text-base font-black font-mono text-main">${bid.amount}</span>
-                                                <span className="text-[10px] text-muted font-mono">{bid.receivedAt}</span>
-                                            </div>
-                                            <p className="text-xs text-muted">
-                                                Supplier: <span className="font-semibold text-main">{bid.supplierId?.split('-')[0] || 'Unknown'}</span>
-                                            </p>
-                                        </motion.div>
-                                    ))}
+                                    {[...rtdbBids].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)).map((bid, i) => {
+                                        const sid = bid.supplier_id;
+                                        const iid = bid.item_id;
+                                        const supplierName = supplierProfiles[sid]?.company_name || supplierProfiles[sid]?.name || sid?.split('-')[0] || 'Unknown';
+                                        const itemName = itemDetails[iid]?.name || iid?.split('-')[0] || '';
+                                        return (
+                                            <motion.div
+                                                key={bid.bid_id || `live-${i}`}
+                                                initial={{ opacity: 0, x: -10, backgroundColor: 'var(--color-primary-glow)' }}
+                                                animate={{ opacity: 1, x: 0, backgroundColor: 'transparent' }}
+                                                transition={{ duration: 0.4 }}
+                                                className="p-3 hover:bg-surface-hover/30 transition-colors"
+                                            >
+                                                <div className="flex items-center justify-between mb-1">
+                                                    <span className="text-base font-black font-mono text-main">${Number(bid.amount || 0).toFixed(0)}</span>
+                                                    <span className="text-[10px] text-muted font-mono">{bid.created_at ? new Date(bid.created_at).toLocaleTimeString() : ''}</span>
+                                                </div>
+                                                <div className="flex items-center gap-3 text-xs text-muted">
+                                                    <span>Supplier: <span className="font-semibold text-main">{supplierName}</span></span>
+                                                    {itemName && <span>Item: <span className="font-mono">{itemName}</span></span>}
+                                                </div>
+                                            </motion.div>
+                                        );
+                                    })}
                                 </AnimatePresence>
                             </div>
                         )}
