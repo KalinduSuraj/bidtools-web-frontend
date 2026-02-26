@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Zap, Moon, Sun, Menu, X, Compass, Briefcase, Package, Info, Home } from 'lucide-react';
+import { Moon, Sun, Menu, X, Compass, Briefcase, Package, Info, Home } from 'lucide-react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useTheme } from 'next-themes';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
@@ -72,11 +73,7 @@ export default function Navbar() {
                 <div className="container mx-auto px-6 h-18 flex items-center justify-between py-3">
                     {/* Logo */}
                     <Link href="/" className="flex items-center gap-2.5 group">
-                        <div className="relative w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-accent-danger shadow-lg flex items-center justify-center group-hover:shadow-primary/30 group-hover:scale-105 transition-all duration-300">
-                            <Zap className="w-5 h-5 text-white" />
-                            {/* Glow ring */}
-                            <div className="absolute inset-0 rounded-xl bg-gradient-to-br from-primary to-accent-danger opacity-0 group-hover:opacity-40 blur-md transition-opacity duration-300" />
-                        </div>
+                        <Image src="/logo.png" alt="BidTools" width={36} height={36} className="w-9 h-9 rounded-xl object-contain group-hover:scale-105 transition-all duration-300" />
                         <span className="font-bold text-xl tracking-tight bg-gradient-to-r from-main to-muted bg-clip-text group-hover:from-primary group-hover:to-accent-danger group-hover:text-transparent transition-all duration-300">
                             BidTools
                         </span>
