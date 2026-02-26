@@ -21,4 +21,8 @@ export const BidsAPI = {
     /** POST /bid/auction - Create an auction */
     createAuction: async (data: CreateAuctionDto) =>
         apiClient.post('/bid/auction', data),
+
+    /** PATCH /bid/:jobId/:bidId - Update bid status (accept/reject) */
+    updateBidStatus: async (jobId: string, bidId: string, status: 'accepted' | 'rejected') =>
+        apiClient.patch<Bid>(`/bid/${jobId}/${bidId}`, { status }),
 };

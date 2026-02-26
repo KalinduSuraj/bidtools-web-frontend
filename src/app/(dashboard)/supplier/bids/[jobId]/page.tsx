@@ -8,7 +8,7 @@ import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { JobsAPI } from '@/lib/api/jobs.api';
 import { ItemsAPI } from '@/lib/api/items.api';
-import { BidsAPI } from '@/lib/api/bids.api';
+import { BiddingAPI } from '@/lib/api/bidding.api';
 import { LoadingWindow } from '@/components/ui/LoadingWindow';
 import { ErrorWindow } from '@/components/ui/ErrorWindow';
 
@@ -60,11 +60,40 @@ export default function SubmitBidPage({ params }: { params: Promise<{ jobId: str
         setError(null);
 
         try {
-            await BidsAPI.placeBid({
-                jobId: jobId,
+            // Ensure the job is registered in the bidding service before placing a bid
+            try {
+                await BiddingAPI.createJobAuction({
+                    jobId: jobId,
+                    jobDetails: {
+                        description: job?.job_description || '',
+                        latitude: job?.latitude,
+                        longitude: job?.longitude,
+                    },
+                    startTime: Date.now(),
+                    endTime: Math.max(job?.required_to ? new Date(job.required_to).getTime() : 0, Date.now() + 7 * 86400000),
+                    startingPrice: 0,
+                });
+            } catch (regErr: any) {
+                const status = regErr.response?.status;
+                // 409 = already exists → fine, proceed to bid
+                // 400 or other = job registration failed → bid will also fail
+                if (status !== 409 && status !== 200 && status !== 201) {
+                    const regMsg = regErr.response?.data?.message;
+                    console.error('Job registration failed:', status, regErr.response?.data);
+                    throw new Error(
+                        `Could not register job for bidding (${status || 'network error'}): ${Array.isArray(regMsg) ? regMsg.join(', ') : regMsg || regErr.message}`
+                    );
+                }
+            }
+
+            const bidPayload = {
+                supplierId: user.user_id,
+                itemId: formData.item_id,
                 amount: Number(formData.bid_amount),
-                items: formData.item_id ? [{ itemId: formData.item_id, quantity: 1 }] : undefined,
-            });
+            };
+            console.log('Placing bid with payload:', JSON.stringify(bidPayload), 'on job:', jobId);
+
+            await BiddingAPI.placeBid(jobId, bidPayload);
 
             setSuccess(true);
             setTimeout(() => {
@@ -72,10 +101,19 @@ export default function SubmitBidPage({ params }: { params: Promise<{ jobId: str
             }, 2000);
         } catch (err: any) {
             console.error("Failed to submit bid:", err);
-            console.error("Response data:", JSON.stringify(err.response?.data));
-            const msg = err.response?.data?.message;
-            const detail = Array.isArray(msg) ? msg.join(', ') : (typeof msg === 'string' ? msg : JSON.stringify(err.response?.data));
-            setError(detail || "Failed to submit bid. Please try again.");
+            console.error("Full error response:", JSON.stringify(err.response?.data, null, 2));
+            console.error("Status:", err.response?.status);
+
+            // Build a descriptive error message from the server response
+            const data = err.response?.data;
+            let detail = err.message || 'Failed to submit bid.';
+            if (data) {
+                if (typeof data.message === 'string') detail = data.message;
+                else if (Array.isArray(data.message)) detail = data.message.join(', ');
+                else if (typeof data === 'string') detail = data;
+                else detail = JSON.stringify(data);
+            }
+            setError(`[${err.response?.status || 'Error'}] ${detail}`);
             setIsSubmitting(false);
         }
     };

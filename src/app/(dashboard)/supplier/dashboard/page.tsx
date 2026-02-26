@@ -28,12 +28,18 @@ export default function SupplierDashboard() {
                 // Fetch inventory for count
                 const { data: items } = await ItemsAPI.getSupplierItems(user.user_id);
 
-                // Fetch rentals
-                const { data: rentals } = await RentalsAPI.getSupplierRentals(user.user_id);
+                // Fetch rentals (endpoint may be temporarily unavailable)
+                let rentals: any[] = [];
+                try {
+                    const { data: rentalsData } = await RentalsAPI.getSupplierRentals(user.user_id);
+                    rentals = Array.isArray(rentalsData) ? rentalsData : [];
+                } catch (rentalErr: any) {
+                    console.warn('Rental API unavailable:', rentalErr.response?.status, rentalErr.message);
+                }
 
                 setLiveJobs(Array.isArray(jobs) ? jobs : []);
                 setInventory(Array.isArray(items) ? items : []);
-                setOrders(Array.isArray(rentals) ? rentals : []);
+                setOrders(rentals);
             } catch (error) {
                 console.error('Failed to fetch supplier metrics:', error);
             } finally {

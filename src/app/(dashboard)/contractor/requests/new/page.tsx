@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { JobsAPI } from '@/lib/api/jobs.api';
+import { BiddingAPI } from '@/lib/api/bidding.api';
 
 export default function NewRequestPage() {
     const router = useRouter();
@@ -57,7 +58,26 @@ export default function NewRequestPage() {
                 required_to: new Date(formData.endDate).toISOString()
             };
 
-            await JobsAPI.createJob(payload);
+            const jobRes = await JobsAPI.createJob(payload);
+            const createdJob = jobRes.data;
+
+            // Register the job in the bidding service so suppliers can place live bids
+            try {
+                await BiddingAPI.createJobAuction({
+                    jobId: createdJob.job_id,
+                    jobDetails: {
+                        description: createdJob.job_description,
+                        latitude: createdJob.latitude,
+                        longitude: createdJob.longitude,
+                    },
+                    startTime: Date.now(),
+                    endTime: Math.max(new Date(createdJob.required_to).getTime(), Date.now() + 7 * 86400000),
+                    startingPrice: 0,
+                });
+            } catch (biddingErr) {
+                console.warn('Bidding service registration failed (non-blocking):', biddingErr);
+            }
+
             router.push('/contractor/dashboard');
         } catch (err: any) {
             console.error("Failed to create job request:", err);

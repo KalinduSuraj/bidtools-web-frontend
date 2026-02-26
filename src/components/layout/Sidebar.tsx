@@ -20,7 +20,8 @@ import {
     User,
     CreditCard,
     ShoppingCart,
-    Crosshair
+    Crosshair,
+    Gavel
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -45,6 +46,7 @@ export function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
     const contractorLinks: NavLink[] = [
         { name: 'Overview', href: '/contractor/dashboard', icon: LayoutDashboard, section: 'Main' },
         { name: 'New Request', href: '/contractor/requests/new', icon: FileText, section: 'Main' },
+        { name: 'Bid Management', href: '/contractor/bids', icon: Gavel, section: 'Main' },
         { name: 'Rentals', href: '/contractor/rentals', icon: Package, section: 'Main' },
         { name: 'Payments', href: '/contractor/payments', icon: CreditCard, section: 'Account' },
         { name: 'Notifications', href: '/contractor/notifications', icon: Bell, section: 'Account' },
