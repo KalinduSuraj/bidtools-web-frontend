@@ -72,11 +72,12 @@ export default function AdminUsersPage() {
         }
     };
 
-    const filteredUsers = users.filter(u =>
-        u.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        u.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        u.user_id.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    const filteredUsers = users.filter(u => {
+        const q = searchQuery.toLowerCase();
+        return (u.name || '').toLowerCase().includes(q) ||
+            (u.email || '').toLowerCase().includes(q) ||
+            (u.user_id || '').toLowerCase().includes(q);
+    });
 
     return (
         <div className="space-y-6 pb-12">
@@ -165,16 +166,16 @@ export default function AdminUsersPage() {
                                 <td colSpan={5} className="p-8 text-center text-muted">No users found matching your filters.</td>
                             </tr>
                         ) : (
-                            filteredUsers.map((user) => (
-                                <tr key={user.user_id} className="hover:bg-surface-hover/30 transition-colors group">
+                            filteredUsers.map((user, idx) => (
+                                <tr key={user.user_id || idx} className="hover:bg-surface-hover/30 transition-colors group">
                                     <td className="p-4 pl-6">
                                         <div className="flex items-center gap-3">
                                             <div className="w-10 h-10 rounded-full bg-gradient-to-br from-gray-700 to-gray-900 flex items-center justify-center flex-shrink-0 border border-subtle shadow-inner font-bold text-white text-sm">
-                                                {user.name.charAt(0).toUpperCase()}
+                                                {(user.name || user.email || '?').charAt(0).toUpperCase()}
                                             </div>
                                             <div>
-                                                <p className="font-bold text-main">{user.name}</p>
-                                                <p className="text-xs text-muted font-mono">{user.email}</p>
+                                                <p className="font-bold text-main">{user.name || 'Unnamed User'}</p>
+                                                <p className="text-xs text-muted font-mono">{user.email || '—'}</p>
                                             </div>
                                         </div>
                                     </td>

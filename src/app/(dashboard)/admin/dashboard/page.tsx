@@ -2,10 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Activity, DollarSign, Users, Briefcase, Zap, Loader2, CheckCircle, XCircle } from 'lucide-react';
+import { Activity, DollarSign, Users, Briefcase, Zap, CheckCircle, Clock } from 'lucide-react';
 import {
     AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-    BarChart, Bar, Legend, PieChart, Pie, Cell
+    Legend, PieChart, Pie, Cell
 } from 'recharts';
 import { ProfilesAPI } from '@/lib/api/profiles.api';
 import { PaymentsAPI } from '@/lib/api/payments.api';
