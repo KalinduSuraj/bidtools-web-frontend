@@ -15,9 +15,13 @@ export interface Rental {
 }
 
 export interface CreateRentalDto {
+    job_id: string;
+    contractor_id: string;
+    supplier_id: string;
     bid_id: string;
-    item_id: string;
     start_date: string;
     end_date: string;
     total_amount: number;
+    status?: string;
+    payment_status?: string;
 }

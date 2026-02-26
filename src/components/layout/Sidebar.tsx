@@ -9,7 +9,6 @@ import {
     Users,
     Settings,
     LogOut,
-    Zap,
     Activity,
     DollarSign,
     ShieldCheck,
@@ -20,8 +19,10 @@ import {
     User,
     CreditCard,
     ShoppingCart,
-    Crosshair
+    Crosshair,
+    Gavel
 } from 'lucide-react';
+import Image from 'next/image';
 import { useAuth } from '@/contexts/AuthContext';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -45,6 +46,7 @@ export function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
     const contractorLinks: NavLink[] = [
         { name: 'Overview', href: '/contractor/dashboard', icon: LayoutDashboard, section: 'Main' },
         { name: 'New Request', href: '/contractor/requests/new', icon: FileText, section: 'Main' },
+        { name: 'Bid Management', href: '/contractor/bids', icon: Gavel, section: 'Main' },
         { name: 'Rentals', href: '/contractor/rentals', icon: Package, section: 'Main' },
         { name: 'Payments', href: '/contractor/payments', icon: CreditCard, section: 'Account' },
         { name: 'Notifications', href: '/contractor/notifications', icon: Bell, section: 'Account' },
@@ -104,9 +106,7 @@ export function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
             >
                 <div className="h-20 flex items-center px-6 border-b border-subtle">
                     <Link href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
-                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-accent-danger shadow-[0_0_15px_var(--color-primary-glow)] flex items-center justify-center">
-                            <Zap className="w-5 h-5 text-white" />
-                        </div>
+                        <Image src="/logo.png" alt="BidTools" width={32} height={32} className="w-8 h-8 rounded-lg object-contain" />
                         <span className="font-bold text-xl tracking-tight">BidTools</span>
                     </Link>
                 </div>

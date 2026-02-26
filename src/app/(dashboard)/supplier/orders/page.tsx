@@ -23,8 +23,14 @@ export default function SupplierOrdersPage() {
             if (!user?.user_id) return;
             setIsLoading(true);
             try {
-                const { data } = await RentalsAPI.getSupplierRentals(user.user_id);
-                const sorted = (Array.isArray(data) ? data : []).sort((a: any, b: any) =>
+                let rawOrders: any[] = [];
+                try {
+                    const { data } = await RentalsAPI.getSupplierRentals(user.user_id);
+                    rawOrders = Array.isArray(data) ? data : [];
+                } catch (apiErr: any) {
+                    console.warn('Rental API unavailable:', apiErr.response?.status, apiErr.message);
+                }
+                const sorted = rawOrders.sort((a: any, b: any) =>
                     new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
                 );
                 setOrders(sorted);

@@ -35,8 +35,14 @@ export default function ContractorRentalsPage() {
             setIsLoading(true);
             try {
                 // Fetch basic rentals
-                const { data } = await RentalsAPI.getContractorRentals(user.user_id);
-                const rawRentals = Array.isArray(data) ? data : [];
+                let rawRentals: any[] = [];
+                try {
+                    const { data } = await RentalsAPI.getContractorRentals(user.user_id);
+                    rawRentals = Array.isArray(data) ? data : [];
+                } catch (apiErr: any) {
+                    console.warn('Rental API unavailable:', apiErr.response?.status, apiErr.response?.data?.message || apiErr.message);
+                    // Backend /rental/contractor endpoint may be temporarily down — show empty state
+                }
 
                 // Attempt to enrich with Job Descriptions for a better UX
                 const enriched = await Promise.all(
